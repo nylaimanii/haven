@@ -1,3 +1,27 @@
+/*
+ * HAVEN design tokens
+ * --------------------------------------------------------------------------
+ * Hazard semantics (reused by map layers and risk UI later):
+ *   --haven-heat       hot orange-red, heat-index / temperature risk
+ *   --haven-flood      deep water blue, flood / precipitation risk
+ *   --haven-air        smoky amber, air-quality (AQI / PM2.5) risk
+ *   --haven-safe       calm green, "this place looks ok" indicator
+ *
+ * Risk bands (used for scores / thresholds, e.g. score 0-100):
+ *   --band-green       low risk
+ *   --band-yellow      moderate
+ *   --band-orange      elevated
+ *   --band-red         severe
+ *
+ * Surfaces (dark-first):
+ *   --haven-surface    slightly raised card / panel above --background
+ *   --haven-hairline   hairline border for dividers, panel edges
+ *
+ * Base palette is shadcn-driven (oklch via :root / .dark). The .dark
+ * --background is intentionally cool-blue-tinted near-black, not pure neutral.
+ * --------------------------------------------------------------------------
+ */
+
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
@@ -45,6 +69,22 @@
     --radius-2xl: calc(var(--radius) * 1.8);
     --radius-3xl: calc(var(--radius) * 2.2);
     --radius-4xl: calc(var(--radius) * 2.6);
+
+    /* HAVEN hazard accents */
+    --color-haven-heat: var(--haven-heat);
+    --color-haven-flood: var(--haven-flood);
+    --color-haven-air: var(--haven-air);
+    --color-haven-safe: var(--haven-safe);
+
+    /* HAVEN risk bands */
+    --color-band-green: var(--band-green);
+    --color-band-yellow: var(--band-yellow);
+    --color-band-orange: var(--band-orange);
+    --color-band-red: var(--band-red);
+
+    /* HAVEN surfaces */
+    --color-haven-surface: var(--haven-surface);
+    --color-haven-hairline: var(--haven-hairline);
 }
 
 :root {
@@ -80,11 +120,23 @@
     --sidebar-accent-foreground: oklch(0.205 0 0);
     --sidebar-border: oklch(0.922 0 0);
     --sidebar-ring: oklch(0.708 0 0);
+
+    /* HAVEN tokens — light defaults (we run dark-first, but keep parity) */
+    --haven-heat: #D94F2A;
+    --haven-flood: #1F6FB2;
+    --haven-air: #C99A3A;
+    --haven-safe: #2FAE6B;
+    --band-green: #34C77A;
+    --band-yellow: #E0C04B;
+    --band-orange: #E68A3A;
+    --band-red: #DC4A47;
+    --haven-surface: oklch(0.985 0 0);
+    --haven-hairline: oklch(0.9 0 0);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
+    --background: oklch(0.14 0.012 250);
+    --foreground: oklch(0.97 0.004 240);
     --card: oklch(0.205 0 0);
     --card-foreground: oklch(0.985 0 0);
     --popover: oklch(0.205 0 0);
@@ -114,6 +166,18 @@
     --sidebar-accent-foreground: oklch(0.985 0 0);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.556 0 0);
+
+    /* HAVEN tokens — dark theme (the default for this app) */
+    --haven-heat: #E85F36;
+    --haven-flood: #3A8AD1;
+    --haven-air: #D9A648;
+    --haven-safe: #3FC179;
+    --band-green: #3FC179;
+    --band-yellow: #E8C95A;
+    --band-orange: #ED9148;
+    --band-red: #E55856;
+    --haven-surface: oklch(0.185 0.014 250);
+    --haven-hairline: oklch(1 0 0 / 7%);
 }
 
 @layer base {
