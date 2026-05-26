@@ -28,6 +28,15 @@ export default function MapView() {
       "top-right",
     );
 
+    map.on("styleimagemissing", (e) => {
+      if (map.hasImage(e.id)) return;
+      map.addImage(e.id, {
+        width: 1,
+        height: 1,
+        data: new Uint8Array([0, 0, 0, 0]),
+      });
+    });
+
     mapRef.current = map;
 
     return () => {
