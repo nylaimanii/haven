@@ -32,8 +32,7 @@ export default function HeatScoreCard() {
   const bandLabel = BAND_LABEL[heatScore.band];
 
   return (
-    <div className="pointer-events-none fixed bottom-6 left-4 z-10 max-w-[calc(100vw-2rem)] sm:max-w-xs">
-      <div className="pointer-events-auto rounded-xl border border-haven-hairline bg-haven-surface/80 p-5 shadow-2xl backdrop-blur-md">
+    <div className="pointer-events-auto rounded-xl border border-haven-hairline bg-haven-surface/80 p-5 shadow-2xl backdrop-blur-md">
         <div className="flex items-baseline gap-3">
           <span
             className={`text-5xl font-semibold tracking-tight tabular-nums ${bandColor}`}
@@ -74,7 +73,6 @@ export default function HeatScoreCard() {
             );
           })}
         </ul>
-      </div>
     </div>
   );
 }
