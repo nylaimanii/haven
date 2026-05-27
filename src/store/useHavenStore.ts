@@ -20,6 +20,7 @@ import type {
   HistoryPoint,
   Place,
   Profile,
+  ResilienceHub,
 } from "@/types";
 
 const defaultProfile: Profile = {
@@ -47,6 +48,7 @@ type HavenState = {
   history: HistoryPoint[] | null;
   heatTrend: HeatTrendResult | null;
   advisor: AdvisorResult | null;
+  hubs: ResilienceHub[] | null;
 
   setPlace: (place: Place) => void;
   clearPlace: () => void;
@@ -56,6 +58,7 @@ type HavenState = {
   setConditions: (conditions: Conditions | null) => void;
   setHistory: (history: HistoryPoint[] | null) => void;
   setAdvisor: (advisor: AdvisorResult | null) => void;
+  setHubs: (hubs: ResilienceHub[] | null) => void;
 };
 
 export const useHavenStore = create<HavenState>()((set) => ({
@@ -67,6 +70,7 @@ export const useHavenStore = create<HavenState>()((set) => ({
   history: null,
   heatTrend: null,
   advisor: null,
+  hubs: null,
 
   setPlace: (place) => set({ place }),
   clearPlace: () =>
@@ -77,6 +81,7 @@ export const useHavenStore = create<HavenState>()((set) => ({
       history: null,
       heatTrend: null,
       advisor: null,
+      hubs: null,
     }),
 
   updateProfile: (partial) =>
@@ -113,4 +118,6 @@ export const useHavenStore = create<HavenState>()((set) => ({
     }),
 
   setAdvisor: (advisor) => set({ advisor }),
+
+  setHubs: (hubs) => set({ hubs }),
 }));

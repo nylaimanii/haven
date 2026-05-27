@@ -30,6 +30,16 @@ export type Conditions = {
 
 export type HistoryPoint = { date: string; tmaxF: number };
 
+export type ResilienceHub = {
+  id: string; // "node/12345" or "way/67890" — stable OSM id
+  name: string;
+  type: "library" | "community_centre";
+  lat: number;
+  lng: number;
+  distanceMeters: number;
+  openNow: boolean | null; // null = hours unknown / not parseable
+};
+
 export type YearHotDays = { year: number; hotDays: number };
 
 export type HeatTrendResult = {

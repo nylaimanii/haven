@@ -30,6 +30,31 @@ const CANOPY_SOURCE_ID = "haven-canopy-raster";
 const CANOPY_LAYER_ID = "haven-canopy-raster-layer";
 const CANOPY_OPACITY = 0.4;
 
+const HUB_COLOR = "#3FC179"; // --haven-safe
+const HUB_MAX_SHOWN = 5;
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function buildHubMarkerEl(openNow: boolean | null): HTMLElement {
+  const el = document.createElement("div");
+  const known = openNow === true;
+  el.style.width = "12px";
+  el.style.height = "12px";
+  el.style.borderRadius = "50%";
+  el.style.background = known ? HUB_COLOR : "transparent";
+  el.style.border = `2px solid ${HUB_COLOR}`;
+  el.style.boxShadow = "0 0 0 1px rgba(0,0,0,0.5)";
+  el.style.cursor = "pointer";
+  el.style.boxSizing = "border-box";
+  return el;
+}
+
 type HeatPoint = { lat: number; lng: number; temp: number };
 type CanopyPoint = { lat: number; lng: number; canopy: number };
 type BBox = { west: number; south: number; east: number; north: number };
@@ -148,6 +173,7 @@ export default function MapView() {
 
   const place = useHavenStore((s) => s.place);
   const activeHazard = useHavenStore((s) => s.activeHazard);
+  const hubs = useHavenStore((s) => s.hubs);
 
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
@@ -386,6 +412,39 @@ export default function MapView() {
   useEffect(() => {
     renderRastersRef.current();
   }, [activeHazard]);
+
+  // Nearest resilience hubs as small green markers. Cleanup removes them when
+  // hubs change, place clears, or hazard switches — keeps state in lockstep
+  // with the store.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!hubs || activeHazard !== "heat") return;
+
+    const markers: maplibregl.Marker[] = [];
+    const shown = hubs.slice(0, HUB_MAX_SHOWN);
+    for (const hub of shown) {
+      const el = buildHubMarkerEl(hub.openNow);
+      const popup = new maplibregl.Popup({
+        offset: 12,
+        closeButton: false,
+      }).setHTML(
+        `<div style="font-family:system-ui;font-size:11px;color:#0a0a0a;line-height:1.4">` +
+          `<strong>${escapeHtml(hub.name)}</strong><br/>` +
+          `${(hub.distanceMeters / 1000).toFixed(1)} km` +
+          `</div>`,
+      );
+      const marker = new maplibregl.Marker({ element: el })
+        .setLngLat([hub.lng, hub.lat])
+        .setPopup(popup)
+        .addTo(map);
+      markers.push(marker);
+    }
+
+    return () => {
+      for (const m of markers) m.remove();
+    };
+  }, [hubs, activeHazard]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
