@@ -15,6 +15,9 @@ const MARKER_COLOR = "#E85F36"; // --haven-heat (dark)
 const MOVE_DEBOUNCE_MS = 500;
 const HEAT_GRID_N = 16; // must match the server's GRID_N
 const HEAT_RASTER_SIZE = 256;
+// Overscan: fetch + position the raster 15% beyond the viewport on each side so a
+// single move doesn't reveal a hard rectangle edge before the next debounced refresh.
+const HEAT_BBOX_PAD = 0.15;
 
 const HEAT_SOURCE_ID = "haven-heat-raster";
 const HEAT_LAYER_ID = "haven-heat-raster-layer";
@@ -172,7 +175,11 @@ export default function MapView() {
         | maplibregl.ImageSource
         | undefined;
       if (existing) {
-        existing.updateImage({ url, coordinates: coords });
+        // Update coords first so the source's geographic placement changes BEFORE
+        // the new pixels arrive — combined updateImage({url, coordinates}) is
+        // observed to skip the coord change on MapLibre 5.x, so split it.
+        existing.setCoordinates(coords);
+        existing.updateImage({ url });
         return;
       }
       map.addSource(HEAT_SOURCE_ID, {
@@ -196,7 +203,7 @@ export default function MapView() {
           type: "raster",
           source: HEAT_SOURCE_ID,
           paint: {
-            "raster-opacity": 0.65,
+            "raster-opacity": 0.5,
             "raster-resampling": "linear",
           },
         },
@@ -212,11 +219,17 @@ export default function MapView() {
         return;
       }
       const b = map.getBounds();
+      const w = b.getWest();
+      const e = b.getEast();
+      const s = b.getSouth();
+      const n = b.getNorth();
+      const padLng = (e - w) * HEAT_BBOX_PAD;
+      const padLat = (n - s) * HEAT_BBOX_PAD;
       const bbox: BBox = {
-        west: b.getWest(),
-        south: b.getSouth(),
-        east: b.getEast(),
-        north: b.getNorth(),
+        west: w - padLng,
+        east: e + padLng,
+        south: s - padLat,
+        north: n + padLat,
       };
       const params = new URLSearchParams({
         west: String(bbox.west),
