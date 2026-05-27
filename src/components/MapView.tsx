@@ -32,6 +32,15 @@ const CANOPY_OPACITY = 0.4;
 const FLOOD_SOURCE_ID = "haven-flood-raster";
 const FLOOD_LAYER_ID = "haven-flood-raster-layer";
 const FLOOD_OPACITY = 0.55;
+const AIR_SOURCE_ID = "haven-air-raster";
+const AIR_LAYER_ID = "haven-air-raster-layer";
+const AIR_OPACITY = 0.7;
+// Absolute US AQI scale for the air raster. AQI < ~25 = clean (transparent),
+// AQI >= 200 = unhealthy/hazardous, painted fully. Anchored to real category
+// boundaries instead of viewport min/max so a clean city doesn't get falsely
+// amber'd just because it's slightly less clean than its neighbor.
+const AIR_AQI_MIN = 0;
+const AIR_AQI_MAX = 200;
 
 const HUB_COLOR = "#3FC179"; // --haven-safe
 const HUB_MAX_SHOWN = 5;
@@ -65,6 +74,7 @@ function buildHubMarkerEl(openNow: boolean | null): HTMLElement {
 type HeatPoint = { lat: number; lng: number; temp: number };
 type CanopyPoint = { lat: number; lng: number; canopy: number };
 type FloodPoint = { lat: number; lng: number; elevation: number };
+type AirPoint = { lat: number; lng: number; aqi: number };
 type BBox = { west: number; south: number; east: number; north: number };
 
 // Color ramps include alpha so each layer controls its own pixel opacity. Heat
@@ -97,6 +107,17 @@ const FLOOD_RAMP: Ramp = [
   [1.0, [255, 255, 255, 0]],
 ];
 
+// Air-quality ramp: clean (AQI ~0) → transparent, worsening → deepening
+// haven-air amber, hazardous → dark amber/brown. Mapped against absolute
+// AQI 0..200 via fixedRange so the colors match real category severity.
+const AIR_RAMP: Ramp = [
+  [0.0, [217, 166, 72, 0]],
+  [0.25, [217, 166, 72, 100]],
+  [0.5, [200, 130, 60, 180]],
+  [0.75, [180, 95, 50, 225]],
+  [1.0, [150, 70, 40, 250]],
+];
+
 function rampColor(t: number, ramp: Ramp): [number, number, number, number] {
   const tc = Math.max(0, Math.min(1, t));
   for (let i = 0; i < ramp.length - 1; i++) {
@@ -115,9 +136,21 @@ function rampColor(t: number, ramp: Ramp): [number, number, number, number] {
   return ramp[ramp.length - 1][1];
 }
 
+type RasterBuildOptions = {
+  // When provided, normalize each pixel against this absolute range instead of
+  // the viewport's min/max. Use for signals like US AQI where 30 and 200 are
+  // wildly different real-world conditions and we don't want viewport
+  // normalization to flatten them.
+  fixedRange?: { min: number; max: number };
+};
+
 // Bilinear-interpolate the N×N value grid into a SIZE×SIZE color raster,
 // then run a blur pass for buttery edges. Returns a data URL or null.
-function buildRasterURL(values: number[], ramp: Ramp): string | null {
+function buildRasterURL(
+  values: number[],
+  ramp: Ramp,
+  options: RasterBuildOptions = {},
+): string | null {
   const n = HEAT_GRID_N;
   if (values.length !== n * n) return null;
 
@@ -133,6 +166,10 @@ function buildRasterURL(values: number[], ramp: Ramp): string | null {
       if (v > maxV) maxV = v;
     }
     grid.push(row);
+  }
+  if (options.fixedRange) {
+    minV = options.fixedRange.min;
+    maxV = options.fixedRange.max;
   }
   const safeRange = maxV - minV > 0.001 ? maxV - minV : 1;
 
@@ -235,6 +272,7 @@ export default function MapView() {
       unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
       unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
       unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
+      unmountRasterLayer(AIR_SOURCE_ID, AIR_LAYER_ID);
     }
 
     function mountRasterLayer(
@@ -390,6 +428,38 @@ export default function MapView() {
       }
     }
 
+    async function renderAir(bbox: BBox, qs: string) {
+      try {
+        const r = await fetch(`/api/air?${qs}`);
+        if (!r.ok) return;
+        const data = (await r.json()) as { points: AirPoint[] };
+        if (
+          !useHavenStore.getState().place ||
+          useHavenStore.getState().activeHazard !== "air" ||
+          map.getZoom() < HEAT_MIN_ZOOM
+        ) {
+          unmountAll();
+          return;
+        }
+        const url = buildRasterURL(
+          (data.points ?? []).map((p) => p.aqi),
+          AIR_RAMP,
+          { fixedRange: { min: AIR_AQI_MIN, max: AIR_AQI_MAX } },
+        );
+        if (url) {
+          mountRasterLayer(
+            AIR_SOURCE_ID,
+            AIR_LAYER_ID,
+            url,
+            bbox,
+            AIR_OPACITY,
+          );
+        }
+      } catch {
+        // ignore — degrade to "no raster" cleanly
+      }
+    }
+
     async function renderRasters() {
       const placeNow = useHavenStore.getState().place;
       const hazard = useHavenStore.getState().activeHazard;
@@ -402,15 +472,20 @@ export default function MapView() {
       const qs = bboxQS(bbox);
 
       if (hazard === "heat") {
-        // Switching INTO heat → ensure flood from a prior render is gone.
         unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
+        unmountRasterLayer(AIR_SOURCE_ID, AIR_LAYER_ID);
         await renderHeat(bbox, qs);
       } else if (hazard === "flood") {
         unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
         unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
+        unmountRasterLayer(AIR_SOURCE_ID, AIR_LAYER_ID);
         await renderFlood(bbox, qs);
+      } else if (hazard === "air") {
+        unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
+        unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
+        unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
+        await renderAir(bbox, qs);
       } else {
-        // air (no data layer yet) or any other hazard → clean map.
         unmountAll();
       }
     }

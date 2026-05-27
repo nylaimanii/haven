@@ -1,7 +1,6 @@
 import AdvisorCard from "@/components/AdvisorCard";
 import AdvisorLoader from "@/components/AdvisorLoader";
 import ConditionsLoader from "@/components/ConditionsLoader";
-import HazardHint from "@/components/HazardHint";
 import HazardToggle from "@/components/HazardToggle";
 import HeatScoreCard from "@/components/HeatScoreCard";
 import HistoryLoader from "@/components/HistoryLoader";
@@ -22,7 +21,6 @@ export default function Home() {
       </div>
       <IntroCard />
       <HazardToggle />
-      <HazardHint />
       <div className="pointer-events-none fixed bottom-6 left-4 z-10 flex max-h-[calc(100vh-7rem)] max-w-[300px] flex-col gap-3 overflow-y-auto sm:max-w-xs">
         <HeatScoreCard />
         <AdvisorCard />
