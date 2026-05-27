@@ -1,5 +1,6 @@
 import IntroCard from "@/components/IntroCard";
 import MapView from "@/components/MapViewClient";
+import ProfileButton from "@/components/ProfileButton";
 
 export default function Home() {
   return (
@@ -8,6 +9,7 @@ export default function Home() {
         <MapView />
       </div>
       <IntroCard />
+      <ProfileButton />
     </main>
   );
 }

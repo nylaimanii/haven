@@ -32,7 +32,7 @@ export default function MapView() {
 
     map.addControl(
       new maplibregl.NavigationControl({ visualizePitch: false }),
-      "top-right",
+      "bottom-right",
     );
 
     map.on("styleimagemissing", (e) => {
