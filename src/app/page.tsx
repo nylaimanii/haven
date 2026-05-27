@@ -1,3 +1,5 @@
+import HazardHint from "@/components/HazardHint";
+import HazardToggle from "@/components/HazardToggle";
 import IntroCard from "@/components/IntroCard";
 import MapView from "@/components/MapViewClient";
 import ProfileButton from "@/components/ProfileButton";
@@ -9,6 +11,8 @@ export default function Home() {
         <MapView />
       </div>
       <IntroCard />
+      <HazardToggle />
+      <HazardHint />
       <ProfileButton />
     </main>
   );
