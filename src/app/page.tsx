@@ -1,6 +1,7 @@
 import ConditionsLoader from "@/components/ConditionsLoader";
 import HazardHint from "@/components/HazardHint";
 import HazardToggle from "@/components/HazardToggle";
+import HeatScoreCard from "@/components/HeatScoreCard";
 import IntroCard from "@/components/IntroCard";
 import MapView from "@/components/MapViewClient";
 import ProfileButton from "@/components/ProfileButton";
@@ -14,6 +15,7 @@ export default function Home() {
       <IntroCard />
       <HazardToggle />
       <HazardHint />
+      <HeatScoreCard />
       <ProfileButton />
       <ConditionsLoader />
     </main>
