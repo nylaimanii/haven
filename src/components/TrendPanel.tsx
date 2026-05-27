@@ -8,6 +8,8 @@ import { createPortal } from "react-dom";
 
 import { useHavenStore } from "@/store/useHavenStore";
 
+import MigrationTeaser from "./MigrationTeaser";
+
 // Recharts is heavy (~110 kB). Defer it until the user opens the panel so
 // it doesn't bloat the initial page load.
 const TrendChart = dynamic(() => import("./TrendChart"), { ssr: false });
@@ -73,7 +75,12 @@ export default function TrendPanel() {
           </button>
         </div>
         <div className="flex-1 overflow-y-auto px-6 py-6">
-          {open && <TrendChart trend={heatTrend} />}
+          {open && (
+            <>
+              <TrendChart trend={heatTrend} />
+              <MigrationTeaser trend={heatTrend} />
+            </>
+          )}
         </div>
       </aside>
     </>
