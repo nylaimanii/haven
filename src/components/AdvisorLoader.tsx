@@ -2,8 +2,9 @@
 
 import { useEffect, useRef } from "react";
 
+import { buildAdvisorContext } from "@/lib/buildAdvisorContext";
 import { useHavenStore } from "@/store/useHavenStore";
-import type { AdvisorContext, AdvisorResult } from "@/types";
+import type { AdvisorResult } from "@/types";
 
 // 600ms after the score stabilizes (rapid profile toggling is common in the
 // demo — every flip wouldn't otherwise spam Groq). Each new render replaces
@@ -22,7 +23,20 @@ export default function AdvisorLoader() {
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!place || !conditions || !heatScore || activeHazard !== "heat") {
+    if (activeHazard !== "heat") {
+      abortRef.current?.abort();
+      setAdvisor(null);
+      return;
+    }
+
+    const ctx = buildAdvisorContext({
+      place,
+      conditions,
+      heatScore,
+      heatTrend,
+      profile,
+    });
+    if (!ctx) {
       abortRef.current?.abort();
       setAdvisor(null);
       return;
@@ -32,32 +46,6 @@ export default function AdvisorLoader() {
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
-
-      const ctx: AdvisorContext = {
-        place: { label: place.label },
-        conditions: {
-          tempF: conditions.tempF,
-          feelsLikeF: conditions.feelsLikeF,
-          alerts: conditions.alerts,
-          source: conditions.source,
-        },
-        score: {
-          score: heatScore.score,
-          band: heatScore.band,
-          factors: heatScore.factors,
-          feelsLikeF: heatScore.feelsLikeF,
-        },
-        trend: heatTrend
-          ? {
-              perDecade: heatTrend.perDecade,
-              earlyAvg: heatTrend.earlyAvg,
-              recentAvg: heatTrend.recentAvg,
-              direction: heatTrend.direction,
-              summary: heatTrend.summary,
-            }
-          : null,
-        profile,
-      };
 
       try {
         const r = await fetch("/api/advisor", {
