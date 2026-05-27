@@ -1,3 +1,4 @@
+import ConditionsLoader from "@/components/ConditionsLoader";
 import HazardHint from "@/components/HazardHint";
 import HazardToggle from "@/components/HazardToggle";
 import IntroCard from "@/components/IntroCard";
@@ -14,6 +15,7 @@ export default function Home() {
       <HazardToggle />
       <HazardHint />
       <ProfileButton />
+      <ConditionsLoader />
     </main>
   );
 }

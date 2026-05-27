@@ -16,3 +16,14 @@ export type Profile = {
   hasAC: boolean;
   outdoorWorker: boolean;
 };
+
+export type ConditionAlert = { event: string; severity: string };
+
+export type Conditions = {
+  tempF: number;
+  feelsLikeF: number | null;
+  heatRiskLevel: number | null; // 0-4 (NWS HeatRisk); null when unavailable
+  alerts: ConditionAlert[];
+  source: "nws" | "open-meteo";
+  observedAt: string; // ISO timestamp from the upstream
+};

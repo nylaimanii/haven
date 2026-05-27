@@ -8,7 +8,7 @@
 
 import { create } from "zustand";
 
-import type { Hazard, Place, Profile } from "@/types";
+import type { Conditions, Hazard, Place, Profile } from "@/types";
 
 const defaultProfile: Profile = {
   ageBand: "18to64",
@@ -21,23 +21,27 @@ type HavenState = {
   place: Place | null;
   profile: Profile;
   activeHazard: Hazard;
+  conditions: Conditions | null;
 
   setPlace: (place: Place) => void;
   clearPlace: () => void;
   updateProfile: (partial: Partial<Profile>) => void;
   setActiveHazard: (hazard: Hazard) => void;
   resetProfile: () => void;
+  setConditions: (conditions: Conditions | null) => void;
 };
 
 export const useHavenStore = create<HavenState>()((set) => ({
   place: null,
   profile: defaultProfile,
   activeHazard: "heat",
+  conditions: null,
 
   setPlace: (place) => set({ place }),
-  clearPlace: () => set({ place: null }),
+  clearPlace: () => set({ place: null, conditions: null }),
   updateProfile: (partial) =>
     set((state) => ({ profile: { ...state.profile, ...partial } })),
   setActiveHazard: (hazard) => set({ activeHazard: hazard }),
   resetProfile: () => set({ profile: defaultProfile }),
+  setConditions: (conditions) => set({ conditions }),
 }));
