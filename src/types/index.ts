@@ -40,6 +40,16 @@ export type ResilienceHub = {
   openNow: boolean | null; // null = hours unknown / not parseable
 };
 
+export type RouteToHub = {
+  geometry: {
+    type: "LineString";
+    coordinates: [number, number][]; // [lng, lat][] — OSRM/GeoJSON order
+  };
+  distanceM: number;
+  durationS: number;
+  toHubId: string;
+};
+
 export type YearHotDays = { year: number; hotDays: number };
 
 export type HeatTrendResult = {

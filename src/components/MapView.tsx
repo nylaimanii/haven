@@ -33,6 +33,10 @@ const CANOPY_OPACITY = 0.4;
 const HUB_COLOR = "#3FC179"; // --haven-safe
 const HUB_MAX_SHOWN = 5;
 
+const ROUTE_SOURCE_ID = "haven-route";
+const ROUTE_CASING_LAYER_ID = "haven-route-casing";
+const ROUTE_LAYER_ID = "haven-route-line";
+
 function escapeHtml(s: string): string {
   return s
     .replace(/&/g, "&amp;")
@@ -174,6 +178,7 @@ export default function MapView() {
   const place = useHavenStore((s) => s.place);
   const activeHazard = useHavenStore((s) => s.activeHazard);
   const hubs = useHavenStore((s) => s.hubs);
+  const route = useHavenStore((s) => s.route);
 
   useEffect(() => {
     if (mapRef.current || !containerRef.current) return;
@@ -445,6 +450,68 @@ export default function MapView() {
       for (const m of markers) m.remove();
     };
   }, [hubs, activeHazard]);
+
+  // Walking route to the nearest cooling hub. Casing + main line drawn above
+  // the heat/canopy rasters but before the first symbol layer, so street and
+  // place labels still read on top. Hub markers are HTML overlays so they
+  // naturally sit above the route line — the line connects toward but
+  // doesn't bury the pin it leads to.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!route || activeHazard !== "heat") return;
+
+    let beforeId: string | undefined;
+    for (const layer of map.getStyle().layers ?? []) {
+      if (layer.type === "symbol") {
+        beforeId = layer.id;
+        break;
+      }
+    }
+
+    map.addSource(ROUTE_SOURCE_ID, {
+      type: "geojson",
+      data: {
+        type: "Feature",
+        properties: {},
+        geometry: route.geometry,
+      },
+    });
+    map.addLayer(
+      {
+        id: ROUTE_CASING_LAYER_ID,
+        type: "line",
+        source: ROUTE_SOURCE_ID,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": "rgba(0,0,0,0.55)",
+          "line-width": 7,
+        },
+      },
+      beforeId,
+    );
+    map.addLayer(
+      {
+        id: ROUTE_LAYER_ID,
+        type: "line",
+        source: ROUTE_SOURCE_ID,
+        layout: { "line-cap": "round", "line-join": "round" },
+        paint: {
+          "line-color": HUB_COLOR,
+          "line-width": 4,
+        },
+      },
+      beforeId,
+    );
+
+    return () => {
+      if (map.getLayer(ROUTE_LAYER_ID)) map.removeLayer(ROUTE_LAYER_ID);
+      if (map.getLayer(ROUTE_CASING_LAYER_ID)) {
+        map.removeLayer(ROUTE_CASING_LAYER_ID);
+      }
+      if (map.getSource(ROUTE_SOURCE_ID)) map.removeSource(ROUTE_SOURCE_ID);
+    };
+  }, [route, activeHazard]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }
