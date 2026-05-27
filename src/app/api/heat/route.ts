@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { fetchWithRetry } from "@/lib/fetchWithRetry";
+
 // Open-Meteo current air temperature, batched in ONE request via comma-separated
 // lat/lng. This approximates a heat field for the MVP. The free tier needs no key.
 // TODO: swap to real land-surface-temperature (e.g. NASA MODIS / Landsat LST) later.
@@ -67,7 +69,7 @@ export async function GET(request: Request) {
   });
 
   try {
-    const r = await fetch(`${OPEN_METEO}?${params.toString()}`, {
+    const r = await fetchWithRetry(`${OPEN_METEO}?${params.toString()}`, {
       cache: "no-store",
     });
     if (!r.ok) {

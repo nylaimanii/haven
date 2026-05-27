@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { fetchWithRetry } from "@/lib/fetchWithRetry";
+
 // Tree-canopy / shade proxy for the MVP. We sample Open-Meteo's
 // soil_moisture_0_to_1cm across the same 16x16 grid used for heat: vegetated
 // pockets (parks, tree-lined blocks) retain visibly more topsoil moisture than
@@ -70,7 +72,7 @@ export async function GET(request: Request) {
   });
 
   try {
-    const r = await fetch(`${OPEN_METEO}?${params.toString()}`, {
+    const r = await fetchWithRetry(`${OPEN_METEO}?${params.toString()}`, {
       cache: "no-store",
     });
     if (!r.ok) {

@@ -42,7 +42,7 @@ export default function ProfilePanel() {
                 type="button"
                 onClick={() => updateProfile({ ageBand: opt.value })}
                 aria-pressed={active}
-                className={`rounded px-2 py-1.5 text-xs transition-colors ${
+                className={`flex h-11 items-center justify-center rounded px-2 text-xs transition-colors ${
                   active
                     ? "bg-foreground text-background"
                     : "text-muted-foreground hover:text-foreground"
@@ -65,7 +65,7 @@ export default function ProfilePanel() {
                 type="button"
                 onClick={() => toggleCondition(c.id)}
                 aria-pressed={active}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                className={`flex h-10 items-center rounded-full border px-3.5 text-xs transition-colors ${
                   active
                     ? "border-haven-heat/60 bg-haven-heat/15 text-foreground"
                     : "border-haven-hairline text-muted-foreground hover:text-foreground"
@@ -94,7 +94,7 @@ export default function ProfilePanel() {
         <button
           type="button"
           onClick={resetProfile}
-          className="text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
+          className="-mx-2 inline-flex h-11 items-center px-2 text-xs text-muted-foreground/60 transition-colors hover:text-foreground"
         >
           reset to defaults
         </button>
@@ -123,14 +123,19 @@ function Toggle({
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
+  // The entire row is the tap target so the 20×36 switch isn't the only
+  // hit zone — a 65+ user can tap anywhere on the label and toggle it.
   return (
-    <div className="flex items-center justify-between gap-3">
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className="-mx-2 flex min-h-[44px] w-[calc(100%+1rem)] items-center justify-between gap-3 rounded-md px-2 text-left transition-colors hover:bg-foreground/5"
+    >
       <span className="text-sm text-foreground">{label}</span>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        onClick={() => onChange(!checked)}
+      <span
+        aria-hidden
         className={`relative h-5 w-9 shrink-0 rounded-full transition-colors ${
           checked ? "bg-haven-safe" : "bg-foreground/20"
         }`}
@@ -140,7 +145,7 @@ function Toggle({
             checked ? "translate-x-4" : "translate-x-0.5"
           }`}
         />
-      </button>
-    </div>
+      </span>
+    </button>
   );
 }

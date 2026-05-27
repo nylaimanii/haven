@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { fetchWithRetry } from "@/lib/fetchWithRetry";
+
 // Flood-exposure PROXY for the MVP. We sample Open-Meteo's free Elevation API
 // across the same 16x16 grid used for heat/canopy and render low-lying land
 // in haven-flood blue. Low ground near water floods; high ground doesn't —
@@ -71,7 +73,7 @@ export async function GET(request: Request) {
         latitude: lats.slice(start, end).join(","),
         longitude: lngs.slice(start, end).join(","),
       });
-      const r = await fetch(`${OPEN_METEO_ELEV}?${params.toString()}`, {
+      const r = await fetchWithRetry(`${OPEN_METEO_ELEV}?${params.toString()}`, {
         cache: "no-store",
       });
       if (!r.ok) {

@@ -10,6 +10,8 @@ const DEBOUNCE_MS = 400;
 export default function LocationSearch() {
   const setPlace = useHavenStore((s) => s.setPlace);
   const loadDemo = useHavenStore((s) => s.loadDemo);
+  const shouldFocusSearch = useHavenStore((s) => s.shouldFocusSearch);
+  const clearFocusFlag = useHavenStore((s) => s.clearFocusFlag);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Place[]>([]);
@@ -17,6 +19,17 @@ export default function LocationSearch() {
   const [geoLoading, setGeoLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Auto-focus on mount when goSearch set the flag (i.e. user clicked
+  // "change" on the location pill). Don't auto-focus on a fresh page load
+  // — that would steal scroll/reading from the landing hero.
+  useEffect(() => {
+    if (shouldFocusSearch && inputRef.current) {
+      inputRef.current.focus();
+      clearFocusFlag();
+    }
+  }, [shouldFocusSearch, clearFocusFlag]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -91,11 +104,12 @@ export default function LocationSearch() {
   return (
     <div className="relative w-full text-left">
       <input
+        ref={inputRef}
         type="text"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="search a city or address"
-        className="w-full rounded-md border border-haven-hairline bg-haven-surface/60 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-haven-heat/60"
+        className="h-11 w-full rounded-md border border-haven-hairline bg-haven-surface/60 px-3 text-sm text-foreground placeholder:text-muted-foreground/60 outline-none transition-colors focus:border-haven-heat/60"
         aria-label="search location"
       />
 
@@ -115,12 +129,12 @@ export default function LocationSearch() {
         </ul>
       )}
 
-      <div className="mt-3 flex items-center justify-between gap-3">
+      <div className="mt-2 flex items-center justify-between gap-3">
         <button
           type="button"
           onClick={handleGeolocate}
           disabled={geoLoading}
-          className="text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+          className="-mx-2 flex h-11 items-center px-2 text-xs text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
         >
           {geoLoading ? "locating…" : "use my location"}
         </button>
@@ -138,7 +152,7 @@ export default function LocationSearch() {
       <button
         type="button"
         onClick={loadDemo}
-        className="mt-4 w-full rounded-md border border-haven-hairline bg-haven-surface/40 px-3 py-2 text-xs text-foreground/85 transition-colors hover:border-haven-heat/40 hover:text-foreground"
+        className="mt-3 flex h-11 w-full items-center justify-center rounded-md border border-haven-hairline bg-haven-surface/40 px-3 text-xs text-foreground/85 transition-colors hover:border-haven-heat/40 hover:text-foreground"
       >
         See a live demo (Newark)
       </button>

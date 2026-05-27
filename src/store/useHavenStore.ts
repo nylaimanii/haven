@@ -51,9 +51,15 @@ type HavenState = {
   advisor: AdvisorResult | null;
   hubs: ResilienceHub[] | null;
   route: RouteToHub | null;
+  // Transient flag: set true by `goSearch` (the pill's "change") so that the
+  // landing's LocationSearch auto-focuses its input on mount. False after a
+  // fresh page load and after any focus consumer clears it.
+  shouldFocusSearch: boolean;
 
   setPlace: (place: Place) => void;
   clearPlace: () => void;
+  goSearch: () => void;
+  clearFocusFlag: () => void;
   updateProfile: (partial: Partial<Profile>) => void;
   setActiveHazard: (hazard: Hazard) => void;
   resetProfile: () => void;
@@ -64,6 +70,17 @@ type HavenState = {
   setRoute: (route: RouteToHub | null) => void;
   loadDemo: () => void;
 };
+
+const FULL_PLACE_RESET = {
+  place: null,
+  conditions: null,
+  heatScore: null,
+  history: null,
+  heatTrend: null,
+  advisor: null,
+  hubs: null,
+  route: null,
+} satisfies Partial<HavenState>;
 
 // One-tap demo: real Newark place + a deliberately vulnerable profile so the
 // score lands at a meaningful band even on a mild day. The profile is still
@@ -92,19 +109,15 @@ export const useHavenStore = create<HavenState>()((set) => ({
   advisor: null,
   hubs: null,
   route: null,
+  shouldFocusSearch: false,
 
   setPlace: (place) => set({ place }),
-  clearPlace: () =>
-    set({
-      place: null,
-      conditions: null,
-      heatScore: null,
-      history: null,
-      heatTrend: null,
-      advisor: null,
-      hubs: null,
-      route: null,
-    }),
+  // "Home": wipe everything, return to the clean landing. No auto-focus.
+  clearPlace: () => set({ ...FULL_PLACE_RESET, shouldFocusSearch: false }),
+  // "Change": wipe everything but flag the search input to auto-focus on the
+  // returning landing — so the user can immediately type a new location.
+  goSearch: () => set({ ...FULL_PLACE_RESET, shouldFocusSearch: true }),
+  clearFocusFlag: () => set({ shouldFocusSearch: false }),
 
   updateProfile: (partial) =>
     set((state) => {
@@ -146,13 +159,14 @@ export const useHavenStore = create<HavenState>()((set) => ({
   setRoute: (route) => set({ route }),
 
   // Atomic seed: place + profile in one set() so the conditions loader fires
-  // against the demo profile (not the previous default). heatScore stays null
-  // until ConditionsLoader populates conditions; setConditions then recomputes
-  // it against the seeded profile.
+  // against the demo profile (not the previous default). Also resets ALL
+  // dependent state so a returning visitor doesn't see stale conditions/
+  // trend/hubs/route from a prior place flash in before the new ones load.
   loadDemo: () =>
     set({
+      ...FULL_PLACE_RESET,
       place: DEMO_PLACE,
       profile: DEMO_PROFILE,
-      heatScore: null,
+      shouldFocusSearch: false,
     }),
 }));

@@ -59,7 +59,7 @@ export default function HazardToggle() {
               type="button"
               onClick={() => setActiveHazard(h.value)}
               aria-pressed={active}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs transition-colors ${
+              className={`flex h-10 items-center gap-1.5 rounded-full border px-3.5 text-xs transition-colors ${
                 active
                   ? h.activeClass
                   : "border-transparent text-muted-foreground hover:text-foreground"

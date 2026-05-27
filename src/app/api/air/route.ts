@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { fetchWithRetry } from "@/lib/fetchWithRetry";
+
 // Real-time US AQI for the current viewport via Open-Meteo's free Air Quality
 // API (no key). This is genuine current air-quality data — wildfire smoke,
 // urban pollution, and inversion events all show up. Not a proxy.
@@ -73,7 +75,7 @@ export async function GET(request: Request) {
         longitude: lngs.slice(start, end).join(","),
         current: "us_aqi",
       });
-      const r = await fetch(`${OPEN_METEO_AQ}?${params.toString()}`, {
+      const r = await fetchWithRetry(`${OPEN_METEO_AQ}?${params.toString()}`, {
         cache: "no-store",
       });
       if (!r.ok) {

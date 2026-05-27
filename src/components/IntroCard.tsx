@@ -33,22 +33,36 @@ const VALUE_PROPS: ValueProp[] = [
 export default function IntroCard() {
   const place = useHavenStore((s) => s.place);
   const clearPlace = useHavenStore((s) => s.clearPlace);
+  const goSearch = useHavenStore((s) => s.goSearch);
 
   // Compact pill once a place is selected — the map experience takes over.
+  // HAVEN wordmark = go home (clean landing, no auto-focus).
+  // "change" = same teardown but the landing's search input auto-focuses so
+  // the user can immediately type a new location.
   if (place) {
     return (
       // Asymmetric padding on mobile (pr-20) keeps the centered pill clear of
       // the top-right ProfileButton (z-20). Resets to symmetric px-4 at sm+.
       <div className="pointer-events-none fixed inset-x-0 top-4 z-10 flex justify-center pl-4 pr-20 sm:px-4">
-        <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-full border border-haven-hairline bg-haven-surface/80 px-4 py-2 text-sm shadow-xl backdrop-blur-md">
-          <span className="font-medium tracking-tight">HAVEN</span>
-          <span className="truncate text-muted-foreground" title={place.label}>
+        <div className="pointer-events-auto flex max-w-md items-center gap-1 rounded-full border border-haven-hairline bg-haven-surface/80 py-1 pl-3 pr-1 text-sm shadow-xl backdrop-blur-md">
+          <button
+            type="button"
+            onClick={clearPlace}
+            aria-label="back to home"
+            className="-my-1 flex h-11 items-center px-2 font-medium tracking-tight text-foreground transition-colors hover:text-haven-heat"
+          >
+            HAVEN
+          </button>
+          <span
+            className="min-w-0 flex-1 truncate text-muted-foreground"
+            title={place.label}
+          >
             {place.label}
           </span>
           <button
             type="button"
-            onClick={clearPlace}
-            className="shrink-0 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            onClick={goSearch}
+            className="-my-1 flex h-11 shrink-0 items-center rounded-full px-3 text-xs text-muted-foreground transition-colors hover:bg-haven-heat/10 hover:text-foreground"
           >
             change
           </button>

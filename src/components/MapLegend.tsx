@@ -12,15 +12,14 @@ export default function MapLegend() {
 
   if (!place) return null;
 
-  // On mobile the bottom-left card stack fills the height of the screen, so a
-  // bottom-right legend ends up visually overlapping it. Anchor the legend to
-  // top-right on mobile (clear of the hazard toggle which sits top-center at
-  // top-20 and the profile button at top-4 right-4 — the legend at top-32
-  // right-4 fits in the gap below them). Desktop keeps the original
-  // bottom-right placement, just above the map's NavigationControl.
+  // The bottom-left card stack fills the height of a phone screen, so any
+  // legend position on mobile overlaps it. Cleanest answer: hide the legend
+  // on mobile entirely (`hidden sm:block`). The card stack's content +
+  // hazard-specific copy already makes the color semantics readable from
+  // context; the explicit legend is a desktop nicety.
   if (activeHazard === "heat") {
     return (
-      <div className="pointer-events-none fixed top-32 right-4 z-10 sm:top-auto sm:bottom-32">
+      <div className="pointer-events-none fixed bottom-32 right-4 z-10 hidden sm:block">
         <div className="pointer-events-auto rounded-lg border border-haven-hairline bg-haven-surface/80 px-3 py-2 text-[10px] shadow-xl backdrop-blur-md">
           <div className="flex items-center gap-2 text-foreground/85">
             <span
@@ -43,7 +42,7 @@ export default function MapLegend() {
 
   if (activeHazard === "flood") {
     return (
-      <div className="pointer-events-none fixed top-32 right-4 z-10 max-w-[260px] sm:top-auto sm:bottom-32">
+      <div className="pointer-events-none fixed bottom-32 right-4 z-10 hidden max-w-[260px] sm:block">
         <div className="pointer-events-auto rounded-lg border border-haven-flood/40 bg-haven-surface/85 px-3 py-2 text-[10px] shadow-xl backdrop-blur-md">
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] uppercase tracking-widest text-haven-flood">
@@ -68,7 +67,7 @@ export default function MapLegend() {
 
   if (activeHazard === "air") {
     return (
-      <div className="pointer-events-none fixed top-32 right-4 z-10 max-w-[240px] sm:top-auto sm:bottom-32">
+      <div className="pointer-events-none fixed bottom-32 right-4 z-10 hidden max-w-[240px] sm:block">
         <div className="pointer-events-auto rounded-lg border border-haven-air/40 bg-haven-surface/85 px-3 py-2 text-[10px] shadow-xl backdrop-blur-md">
           <div className="text-[10px] uppercase tracking-widest text-haven-air">
             Air quality (US AQI)

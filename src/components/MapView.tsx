@@ -226,6 +226,8 @@ export default function MapView() {
   const markerRef = useRef<maplibregl.Marker | null>(null);
   const renderRastersRef = useRef<() => void>(() => {});
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const place = useHavenStore((s) => s.place);
   const activeHazard = useHavenStore((s) => s.activeHazard);
   const hubs = useHavenStore((s) => s.hubs);
@@ -491,26 +493,38 @@ export default function MapView() {
     }
     renderRastersRef.current = renderRasters;
 
-    let debounceId: ReturnType<typeof setTimeout> | null = null;
     function scheduleRender() {
-      if (debounceId) clearTimeout(debounceId);
-      debounceId = setTimeout(renderRasters, MOVE_DEBOUNCE_MS);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(renderRasters, MOVE_DEBOUNCE_MS);
     }
 
     map.on("moveend", scheduleRender);
-    // Any zoom gesture unmounts both rasters immediately so a stale-coord
-    // raster can never read as a shrinking patch in the new viewport.
-    // Show/refetch waits for the debounced moveend so we don't hammer the API.
-    map.on("zoomstart", () => {
-      if (map.getLayer(HEAT_LAYER_ID) || map.getLayer(CANOPY_LAYER_ID)) {
-        unmountAll();
+    // Only unmount during zoom-OUT, not zoom-in. The previous "zoomstart on any
+    // zoom" was too aggressive: a flyTo from initial zoom 10 → 12 (a search
+    // into the app) fired zoomstart and wiped any in-flight or freshly-mounted
+    // raster, which is exactly the "Newark works but Philadelphia doesn't"
+    // symptom the QA flagged. Zoom-in leaves the geo-anchored raster covering
+    // the new (smaller) viewport just fine, so no unmount is needed there.
+    let lastZoom = map.getZoom();
+    map.on("zoom", () => {
+      const z = map.getZoom();
+      if (z < lastZoom) {
+        if (
+          map.getLayer(HEAT_LAYER_ID) ||
+          map.getLayer(CANOPY_LAYER_ID) ||
+          map.getLayer(FLOOD_LAYER_ID) ||
+          map.getLayer(AIR_LAYER_ID)
+        ) {
+          unmountAll();
+        }
       }
+      lastZoom = z;
     });
 
     mapRef.current = map;
 
     return () => {
-      if (debounceId) clearTimeout(debounceId);
+      if (debounceRef.current) clearTimeout(debounceRef.current);
       markerRef.current?.remove();
       markerRef.current = null;
       renderRastersRef.current = () => {};
@@ -544,7 +558,23 @@ export default function MapView() {
         .setLngLat(center)
         .addTo(map);
     }
-    // flyTo will fire moveend → debounced renderRasters → fetch + paint both layers.
+
+    // Fire renderRasters DIRECTLY on the flyTo's moveend — no 500ms debounce
+    // wait. This is what makes the raster appear promptly for any new place
+    // (Philadelphia, Austin, anywhere). Cancels any pending debounced render
+    // so we don't double-fetch when the regular moveend listener also fires.
+    const onFlyEnd = () => {
+      if (debounceRef.current) {
+        clearTimeout(debounceRef.current);
+        debounceRef.current = null;
+      }
+      renderRastersRef.current();
+    };
+    map.once("moveend", onFlyEnd);
+
+    return () => {
+      map.off("moveend", onFlyEnd);
+    };
   }, [place]);
 
   useEffect(() => {
