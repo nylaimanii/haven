@@ -30,6 +30,19 @@ export type Conditions = {
 
 export type HistoryPoint = { date: string; tmaxF: number };
 
+export type YearHotDays = { year: number; hotDays: number };
+
+export type HeatTrendResult = {
+  threshold: number; // °F used to define a "dangerous-heat" day
+  perYear: YearHotDays[]; // sorted ascending, incomplete years dropped
+  slopePerYear: number; // least-squares slope of hotDays vs year
+  perDecade: number; // rounded slope * 10
+  earlyAvg: number; // mean hotDays over the first 5 complete years
+  recentAvg: number; // mean hotDays over the most recent 5 complete years
+  direction: "rising" | "flat" | "falling"; // from slope with small deadband
+  summary: string; // plain-language, deterministically built from the numbers
+};
+
 export type ScoreFactor = { label: string; points: number };
 
 export type HeatScoreResult = {
