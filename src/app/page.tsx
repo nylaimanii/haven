@@ -12,6 +12,7 @@ import MapView from "@/components/MapViewClient";
 import NearestHubChip from "@/components/NearestHubChip";
 import ProfileButton from "@/components/ProfileButton";
 import RouteLoader from "@/components/RouteLoader";
+import TrendPanel from "@/components/TrendPanel";
 
 export default function Home() {
   return (
@@ -26,6 +27,7 @@ export default function Home() {
         <HeatScoreCard />
         <AdvisorCard />
         <NearestHubChip />
+        <TrendPanel />
       </div>
       <MapLegend />
       <ProfileButton />
