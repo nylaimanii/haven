@@ -62,6 +62,23 @@ type HavenState = {
   setAdvisor: (advisor: AdvisorResult | null) => void;
   setHubs: (hubs: ResilienceHub[] | null) => void;
   setRoute: (route: RouteToHub | null) => void;
+  loadDemo: () => void;
+};
+
+// One-tap demo: real Newark place + a deliberately vulnerable profile so the
+// score lands at a meaningful band even on a mild day. The profile is still
+// fully editable via the existing drawer — nothing is hidden.
+const DEMO_PLACE: Place = {
+  lat: 40.7357,
+  lng: -74.1724,
+  label: "Newark, NJ",
+};
+
+const DEMO_PROFILE: Profile = {
+  ageBand: "65plus",
+  conditions: ["heart_condition"],
+  hasAC: false,
+  outdoorWorker: true,
 };
 
 export const useHavenStore = create<HavenState>()((set) => ({
@@ -127,4 +144,15 @@ export const useHavenStore = create<HavenState>()((set) => ({
   setHubs: (hubs) => set({ hubs }),
 
   setRoute: (route) => set({ route }),
+
+  // Atomic seed: place + profile in one set() so the conditions loader fires
+  // against the demo profile (not the previous default). heatScore stays null
+  // until ConditionsLoader populates conditions; setConditions then recomputes
+  // it against the seeded profile.
+  loadDemo: () =>
+    set({
+      place: DEMO_PLACE,
+      profile: DEMO_PROFILE,
+      heatScore: null,
+    }),
 }));

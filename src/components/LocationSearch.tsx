@@ -9,6 +9,7 @@ const DEBOUNCE_MS = 400;
 
 export default function LocationSearch() {
   const setPlace = useHavenStore((s) => s.setPlace);
+  const loadDemo = useHavenStore((s) => s.loadDemo);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<Place[]>([]);
@@ -133,6 +134,14 @@ export default function LocationSearch() {
           {error}
         </p>
       )}
+
+      <button
+        type="button"
+        onClick={loadDemo}
+        className="mt-4 w-full rounded-md border border-haven-hairline bg-haven-surface/40 px-3 py-2 text-xs text-foreground/85 transition-colors hover:border-haven-heat/40 hover:text-foreground"
+      >
+        See a live demo (Newark)
+      </button>
     </div>
   );
 }
