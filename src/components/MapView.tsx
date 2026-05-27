@@ -15,9 +15,12 @@ const MARKER_COLOR = "#E85F36"; // --haven-heat (dark)
 const MOVE_DEBOUNCE_MS = 500;
 const HEAT_GRID_N = 16; // must match the heat + canopy server routes
 const HEAT_RASTER_SIZE = 256;
-// Overscan: fetch + position the raster 15% beyond the viewport on each side so a
-// single move doesn't reveal a hard rectangle edge before the next debounced refresh.
-const HEAT_BBOX_PAD = 0.15;
+// Overscan: fetch + position the raster 50% beyond the viewport on each side
+// (= 2× viewport in each axis). The raster's actual rectangle edge then sits
+// well outside what the user sees, so no flyTo/move timing variance can ever
+// reveal a hard bounding box. Combined with the radial alpha mask in
+// buildRasterURL the visible field has no perceptible edge at all.
+const HEAT_BBOX_PAD = 0.5;
 // HAVEN heat/canopy are hyperlocal — wider than dense-metro scale (zoom < 10)
 // we hide. Set above the zoom where a single moveend's stale-coord transient
 // would otherwise read as a small patch in a much larger viewport.
@@ -217,6 +220,26 @@ function buildRasterURL(
   if (!oc) return canvas.toDataURL("image/png");
   oc.filter = "blur(5px)";
   oc.drawImage(canvas, 0, 0);
+  // Radial alpha mask: feather the canvas's own edges to transparent so even
+  // if the geo bbox rectangle is visible in the viewport, the user never sees
+  // a hard edge — color smoothly dissolves into the basemap. innerR=0.35×SIZE
+  // keeps the data-bearing center fully opaque; outerR=0.5×SIZE puts the
+  // fade-out exactly at the canvas edge.
+  oc.filter = "none";
+  oc.globalCompositeOperation = "destination-in";
+  const cx = HEAT_RASTER_SIZE / 2;
+  const grad = oc.createRadialGradient(
+    cx,
+    cx,
+    HEAT_RASTER_SIZE * 0.35,
+    cx,
+    cx,
+    HEAT_RASTER_SIZE * 0.5,
+  );
+  grad.addColorStop(0, "rgba(0,0,0,1)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  oc.fillStyle = grad;
+  oc.fillRect(0, 0, HEAT_RASTER_SIZE, HEAT_RASTER_SIZE);
   return out.toDataURL("image/png");
 }
 
@@ -559,21 +582,24 @@ export default function MapView() {
         .addTo(map);
     }
 
-    // Fire renderRasters DIRECTLY on the flyTo's moveend — no 500ms debounce
-    // wait. This is what makes the raster appear promptly for any new place
-    // (Philadelphia, Austin, anywhere). Cancels any pending debounced render
-    // so we don't double-fetch when the regular moveend listener also fires.
-    const onFlyEnd = () => {
+    // Fire renderRasters once the map is FULLY SETTLED after flyTo. "idle"
+    // fires after moveend AND after all queued tile loads finish — it's the
+    // canonical MapLibre "nothing pending, geometry is stable" signal.
+    // moveend alone fired before the basemap finished resolving for a
+    // far-away city, so getBounds() occasionally returned a still-animating
+    // viewport and the raster mounted with a slightly-too-small bbox.
+    // Cancels any pending debounced render so we don't double-fetch.
+    const onIdle = () => {
       if (debounceRef.current) {
         clearTimeout(debounceRef.current);
         debounceRef.current = null;
       }
       renderRastersRef.current();
     };
-    map.once("moveend", onFlyEnd);
+    map.once("idle", onIdle);
 
     return () => {
-      map.off("moveend", onFlyEnd);
+      map.off("idle", onIdle);
     };
   }, [place]);
 

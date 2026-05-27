@@ -49,7 +49,7 @@ export default function IntroCard() {
             type="button"
             onClick={clearPlace}
             aria-label="back to home"
-            className="-my-1 flex h-11 items-center px-2 font-medium tracking-tight text-foreground transition-colors hover:text-haven-heat"
+            className="-my-1 flex h-11 cursor-pointer items-center px-2 font-medium tracking-tight text-foreground transition-colors hover:text-haven-heat"
           >
             HAVEN
           </button>
