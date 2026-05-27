@@ -18,8 +18,10 @@ const HEAT_RASTER_SIZE = 256;
 // Overscan: fetch + position the raster 15% beyond the viewport on each side so a
 // single move doesn't reveal a hard rectangle edge before the next debounced refresh.
 const HEAT_BBOX_PAD = 0.15;
-// HAVEN heat/canopy are hyperlocal — wider than metro scale (zoom < 8) we hide.
-const HEAT_MIN_ZOOM = 8;
+// HAVEN heat/canopy are hyperlocal — wider than dense-metro scale (zoom < 10)
+// we hide. Set above the zoom where a single moveend's stale-coord transient
+// would otherwise read as a small patch in a much larger viewport.
+const HEAT_MIN_ZOOM = 10;
 
 const HEAT_SOURCE_ID = "haven-heat-raster";
 const HEAT_LAYER_ID = "haven-heat-raster-layer";
@@ -272,8 +274,15 @@ export default function MapView() {
         fetch(`/api/canopy?${qs}`),
       ]);
 
-      // Re-check that place is still set (could have cleared mid-fetch).
-      if (!useHavenStore.getState().place) {
+      // Re-check gates AFTER the fetch — the user may have cleared the place,
+      // switched hazards, or zoomed below threshold while we were waiting.
+      // Without this, a slow fetch can race a fast zoom-out and mount a
+      // stale-bbox raster at low zoom (the patch the QA flagged).
+      if (
+        !useHavenStore.getState().place ||
+        useHavenStore.getState().activeHazard !== "heat" ||
+        map.getZoom() < HEAT_MIN_ZOOM
+      ) {
         unmountAll();
         return;
       }
@@ -325,14 +334,12 @@ export default function MapView() {
     }
 
     map.on("moveend", scheduleRender);
-    // Instant-hide during zoom-out: as soon as the camera crosses below the
-    // hyperlocal threshold, drop both rasters. Show/refetch still waits for
-    // the debounced moveend so we don't hammer the API while the user zooms.
-    map.on("zoom", () => {
-      if (map.getZoom() < HEAT_MIN_ZOOM) {
-        if (map.getLayer(HEAT_LAYER_ID) || map.getLayer(CANOPY_LAYER_ID)) {
-          unmountAll();
-        }
+    // Any zoom gesture unmounts both rasters immediately so a stale-coord
+    // raster can never read as a shrinking patch in the new viewport.
+    // Show/refetch waits for the debounced moveend so we don't hammer the API.
+    map.on("zoomstart", () => {
+      if (map.getLayer(HEAT_LAYER_ID) || map.getLayer(CANOPY_LAYER_ID)) {
+        unmountAll();
       }
     });
 
