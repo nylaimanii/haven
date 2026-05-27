@@ -28,6 +28,8 @@ export type Conditions = {
   observedAt: string; // ISO timestamp from the upstream
 };
 
+export type HistoryPoint = { date: string; tmaxF: number };
+
 export type ScoreFactor = { label: string; points: number };
 
 export type HeatScoreResult = {

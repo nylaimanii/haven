@@ -14,6 +14,7 @@ import type {
   Conditions,
   Hazard,
   HeatScoreResult,
+  HistoryPoint,
   Place,
   Profile,
 } from "@/types";
@@ -40,6 +41,7 @@ type HavenState = {
   activeHazard: Hazard;
   conditions: Conditions | null;
   heatScore: HeatScoreResult | null;
+  history: HistoryPoint[] | null;
 
   setPlace: (place: Place) => void;
   clearPlace: () => void;
@@ -47,6 +49,7 @@ type HavenState = {
   setActiveHazard: (hazard: Hazard) => void;
   resetProfile: () => void;
   setConditions: (conditions: Conditions | null) => void;
+  setHistory: (history: HistoryPoint[] | null) => void;
 };
 
 export const useHavenStore = create<HavenState>()((set) => ({
@@ -55,10 +58,16 @@ export const useHavenStore = create<HavenState>()((set) => ({
   activeHazard: "heat",
   conditions: null,
   heatScore: null,
+  history: null,
 
   setPlace: (place) => set({ place }),
   clearPlace: () =>
-    set({ place: null, conditions: null, heatScore: null }),
+    set({
+      place: null,
+      conditions: null,
+      heatScore: null,
+      history: null,
+    }),
 
   updateProfile: (partial) =>
     set((state) => {
@@ -86,4 +95,6 @@ export const useHavenStore = create<HavenState>()((set) => ({
       conditions,
       heatScore: deriveScore(conditions, state.profile, state.activeHazard),
     })),
+
+  setHistory: (history) => set({ history }),
 }));
