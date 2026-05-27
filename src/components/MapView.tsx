@@ -13,68 +13,83 @@ const INITIAL_ZOOM = 10;
 const SELECTED_ZOOM = 12;
 const MARKER_COLOR = "#E85F36"; // --haven-heat (dark)
 const MOVE_DEBOUNCE_MS = 500;
-const HEAT_GRID_N = 16; // must match the server's GRID_N
+const HEAT_GRID_N = 16; // must match the heat + canopy server routes
 const HEAT_RASTER_SIZE = 256;
 // Overscan: fetch + position the raster 15% beyond the viewport on each side so a
 // single move doesn't reveal a hard rectangle edge before the next debounced refresh.
 const HEAT_BBOX_PAD = 0.15;
-// HAVEN heat is hyperlocal — wider than metro scale (zoom < 8) we hide the layer
-// instead of letting it shrink to a small patch in a sea of bare basemap.
+// HAVEN heat/canopy are hyperlocal — wider than metro scale (zoom < 8) we hide.
 const HEAT_MIN_ZOOM = 8;
 
 const HEAT_SOURCE_ID = "haven-heat-raster";
 const HEAT_LAYER_ID = "haven-heat-raster-layer";
+const HEAT_OPACITY = 0.5;
+const CANOPY_SOURCE_ID = "haven-canopy-raster";
+const CANOPY_LAYER_ID = "haven-canopy-raster-layer";
+const CANOPY_OPACITY = 0.4;
 
 type HeatPoint = { lat: number; lng: number; temp: number };
+type CanopyPoint = { lat: number; lng: number; canopy: number };
 type BBox = { west: number; south: number; east: number; north: number };
 
-// Cool → warm → --haven-heat ramp.
-const RAMP: [number, [number, number, number]][] = [
-  [0.0, [33, 102, 172]],
-  [0.25, [103, 169, 207]],
-  [0.5, [253, 219, 199]],
-  [0.75, [239, 138, 98]],
-  [1.0, [232, 95, 54]],
+// Color ramps include alpha so each layer controls its own pixel opacity. Heat
+// is fully opaque across the range; canopy fades from transparent (sparse) to a
+// soft --haven-safe green (dense vegetation).
+type Ramp = [t: number, color: [r: number, g: number, b: number, a: number]][];
+
+const HEAT_RAMP: Ramp = [
+  [0.0, [33, 102, 172, 200]],
+  [0.25, [103, 169, 207, 210]],
+  [0.5, [253, 219, 199, 220]],
+  [0.75, [239, 138, 98, 235]],
+  [1.0, [232, 95, 54, 255]],
 ];
 
-function rampColor(t: number): [number, number, number] {
+const CANOPY_RAMP: Ramp = [
+  [0.0, [80, 160, 100, 0]],
+  [0.4, [80, 160, 100, 110]],
+  [0.7, [63, 193, 121, 180]],
+  [1.0, [63, 193, 121, 230]],
+];
+
+function rampColor(t: number, ramp: Ramp): [number, number, number, number] {
   const tc = Math.max(0, Math.min(1, t));
-  for (let i = 0; i < RAMP.length - 1; i++) {
-    const [t1, c1] = RAMP[i];
-    const [t2, c2] = RAMP[i + 1];
+  for (let i = 0; i < ramp.length - 1; i++) {
+    const [t1, c1] = ramp[i];
+    const [t2, c2] = ramp[i + 1];
     if (tc >= t1 && tc <= t2) {
       const k = (tc - t1) / (t2 - t1);
       return [
         Math.round(c1[0] + (c2[0] - c1[0]) * k),
         Math.round(c1[1] + (c2[1] - c1[1]) * k),
         Math.round(c1[2] + (c2[2] - c1[2]) * k),
+        Math.round(c1[3] + (c2[3] - c1[3]) * k),
       ];
     }
   }
-  return RAMP[RAMP.length - 1][1];
+  return ramp[ramp.length - 1][1];
 }
 
-// Bilinear-interpolate the N×N temperature grid into a SIZE×SIZE color raster,
-// then run one blur pass for buttery edges. Returns a data URL.
-function buildHeatRasterURL(points: HeatPoint[]): string | null {
+// Bilinear-interpolate the N×N value grid into a SIZE×SIZE color raster,
+// then run a blur pass for buttery edges. Returns a data URL or null.
+function buildRasterURL(values: number[], ramp: Ramp): string | null {
   const n = HEAT_GRID_N;
-  if (points.length !== n * n) return null;
+  if (values.length !== n * n) return null;
 
-  const temps: number[][] = [];
-  let minT = Infinity;
-  let maxT = -Infinity;
+  const grid: number[][] = [];
+  let minV = Infinity;
+  let maxV = -Infinity;
   for (let i = 0; i < n; i++) {
     const row: number[] = [];
     for (let j = 0; j < n; j++) {
-      const t = points[i * n + j].temp;
-      row.push(t);
-      if (t < minT) minT = t;
-      if (t > maxT) maxT = t;
+      const v = values[i * n + j];
+      row.push(v);
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
     }
-    temps.push(row);
+    grid.push(row);
   }
-  // Avoid divide-by-zero when the grid is nearly uniform.
-  const safeRange = maxT - minT > 0.1 ? maxT - minT : 1;
+  const safeRange = maxV - minV > 0.001 ? maxV - minV : 1;
 
   const canvas = document.createElement("canvas");
   canvas.width = HEAT_RASTER_SIZE;
@@ -84,7 +99,7 @@ function buildHeatRasterURL(points: HeatPoint[]): string | null {
 
   const img = ctx.createImageData(HEAT_RASTER_SIZE, HEAT_RASTER_SIZE);
   for (let py = 0; py < HEAT_RASTER_SIZE; py++) {
-    // Canvas y=0 is the top → north. temps[0] = south row, temps[n-1] = north row.
+    // Canvas y=0 is the top → north. grid[0] = south row, grid[n-1] = north row.
     const gy = ((HEAT_RASTER_SIZE - 1 - py) / (HEAT_RASTER_SIZE - 1)) * (n - 1);
     const gyi = Math.min(n - 2, Math.floor(gy));
     const gyf = gy - gyi;
@@ -93,26 +108,26 @@ function buildHeatRasterURL(points: HeatPoint[]): string | null {
       const gxi = Math.min(n - 2, Math.floor(gx));
       const gxf = gx - gxi;
 
-      const a = temps[gyi][gxi];
-      const b = temps[gyi][gxi + 1];
-      const c = temps[gyi + 1][gxi];
-      const d = temps[gyi + 1][gxi + 1];
+      const a = grid[gyi][gxi];
+      const b = grid[gyi][gxi + 1];
+      const c = grid[gyi + 1][gxi];
+      const d = grid[gyi + 1][gxi + 1];
       const top = a + (b - a) * gxf;
       const bot = c + (d - c) * gxf;
-      const t = top + (bot - top) * gyf;
+      const v = top + (bot - top) * gyf;
 
-      const norm = (t - minT) / safeRange;
-      const [r, g, b2] = rampColor(norm);
+      const norm = (v - minV) / safeRange;
+      const [r, g, b2, alpha] = rampColor(norm, ramp);
       const idx = (py * HEAT_RASTER_SIZE + px) * 4;
       img.data[idx] = r;
       img.data[idx + 1] = g;
       img.data[idx + 2] = b2;
-      img.data[idx + 3] = 200; // alpha ~78% — sits visibly under labels
+      img.data[idx + 3] = alpha;
     }
   }
   ctx.putImageData(img, 0, 0);
 
-  // Final blur pass on a second canvas — produces a buttery continuous surface.
+  // Final blur for buttery edges.
   const out = document.createElement("canvas");
   out.width = HEAT_RASTER_SIZE;
   out.height = HEAT_RASTER_SIZE;
@@ -127,7 +142,7 @@ export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
-  const renderHeatRef = useRef<() => void>(() => {});
+  const renderRastersRef = useRef<() => void>(() => {});
 
   const place = useHavenStore((s) => s.place);
   const activeHazard = useHavenStore((s) => s.activeHazard);
@@ -156,13 +171,31 @@ export default function MapView() {
       });
     });
 
-    function unmountRaster() {
-      if (map.getLayer(HEAT_LAYER_ID)) map.removeLayer(HEAT_LAYER_ID);
-      if (map.getSource(HEAT_SOURCE_ID)) map.removeSource(HEAT_SOURCE_ID);
+    function firstSymbolId(): string | undefined {
+      const layers = map.getStyle().layers ?? [];
+      for (const layer of layers) {
+        if (layer.type === "symbol") return layer.id;
+      }
+      return undefined;
     }
 
-    function mountRaster(url: string, bbox: BBox) {
-      // Clockwise from top-left: TL, TR, BR, BL.
+    function unmountRasterLayer(sourceId: string, layerId: string) {
+      if (map.getLayer(layerId)) map.removeLayer(layerId);
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+    }
+
+    function unmountAll() {
+      unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
+      unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
+    }
+
+    function mountRasterLayer(
+      sourceId: string,
+      layerId: string,
+      url: string,
+      bbox: BBox,
+      opacity: number,
+    ) {
       const coords: [
         [number, number],
         [number, number],
@@ -174,53 +207,44 @@ export default function MapView() {
         [bbox.east, bbox.south],
         [bbox.west, bbox.south],
       ];
-      const existing = map.getSource(HEAT_SOURCE_ID) as
+      const existing = map.getSource(sourceId) as
         | maplibregl.ImageSource
         | undefined;
       if (existing) {
-        // Update coords first so the source's geographic placement changes BEFORE
-        // the new pixels arrive — combined updateImage({url, coordinates}) is
-        // observed to skip the coord change on MapLibre 5.x, so split it.
+        // Split because combined updateImage({ url, coordinates }) is observed
+        // to skip the coord change on MapLibre 5.x — set coords first.
         existing.setCoordinates(coords);
         existing.updateImage({ url });
         return;
       }
-      map.addSource(HEAT_SOURCE_ID, {
+      map.addSource(sourceId, {
         type: "image",
         url,
         coordinates: coords,
       });
-      // Insert beneath the first symbol layer so labels (streets, neighborhoods)
-      // remain readable on top of the heat surface.
-      let beforeId: string | undefined;
-      const layers = map.getStyle().layers ?? [];
-      for (const layer of layers) {
-        if (layer.type === "symbol") {
-          beforeId = layer.id;
-          break;
-        }
-      }
+      // Insert beneath the first symbol layer so street/place labels stack on top.
       map.addLayer(
         {
-          id: HEAT_LAYER_ID,
+          id: layerId,
           type: "raster",
-          source: HEAT_SOURCE_ID,
+          source: sourceId,
           paint: {
-            "raster-opacity": 0.5,
+            "raster-opacity": opacity,
             "raster-resampling": "linear",
           },
         },
-        beforeId,
+        firstSymbolId(),
       );
     }
 
-    async function renderHeat() {
+    async function renderRasters() {
       const placeNow = useHavenStore.getState().place;
       const hazard = useHavenStore.getState().activeHazard;
       if (!placeNow || hazard !== "heat" || map.getZoom() < HEAT_MIN_ZOOM) {
-        unmountRaster();
+        unmountAll();
         return;
       }
+
       const b = map.getBounds();
       const w = b.getWest();
       const e = b.getEast();
@@ -240,40 +264,77 @@ export default function MapView() {
         east: String(bbox.east),
         north: String(bbox.north),
       });
-      try {
-        const r = await fetch(`/api/heat?${params.toString()}`);
-        if (!r.ok) return;
-        const data = (await r.json()) as { points: HeatPoint[] };
-        const url = buildHeatRasterURL(data.points ?? []);
-        if (!url) return;
-        // Re-check that place is still set (could have been cleared mid-fetch).
-        if (!useHavenStore.getState().place) {
-          unmountRaster();
-          return;
+      const qs = params.toString();
+
+      // Parallel fetch; allSettled so canopy failure doesn't kill heat or vice versa.
+      const [heatSettled, canopySettled] = await Promise.allSettled([
+        fetch(`/api/heat?${qs}`),
+        fetch(`/api/canopy?${qs}`),
+      ]);
+
+      // Re-check that place is still set (could have cleared mid-fetch).
+      if (!useHavenStore.getState().place) {
+        unmountAll();
+        return;
+      }
+
+      // Mount heat first so canopy stacks above it (both still below labels).
+      if (heatSettled.status === "fulfilled" && heatSettled.value.ok) {
+        try {
+          const data = (await heatSettled.value.json()) as { points: HeatPoint[] };
+          const url = buildRasterURL(
+            (data.points ?? []).map((p) => p.temp),
+            HEAT_RAMP,
+          );
+          if (url) {
+            mountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID, url, bbox, HEAT_OPACITY);
+          }
+        } catch {
+          // ignore JSON failure
         }
-        mountRaster(url, bbox);
-      } catch {
-        // Ignore transient network failures.
+      }
+      if (canopySettled.status === "fulfilled" && canopySettled.value.ok) {
+        try {
+          const data = (await canopySettled.value.json()) as {
+            points: CanopyPoint[];
+          };
+          const url = buildRasterURL(
+            (data.points ?? []).map((p) => p.canopy),
+            CANOPY_RAMP,
+          );
+          if (url) {
+            mountRasterLayer(
+              CANOPY_SOURCE_ID,
+              CANOPY_LAYER_ID,
+              url,
+              bbox,
+              CANOPY_OPACITY,
+            );
+          }
+        } catch {
+          // ignore JSON failure
+        }
       }
     }
-    renderHeatRef.current = renderHeat;
+    renderRastersRef.current = renderRasters;
 
     let debounceId: ReturnType<typeof setTimeout> | null = null;
     function scheduleRender() {
       if (debounceId) clearTimeout(debounceId);
-      debounceId = setTimeout(renderHeat, MOVE_DEBOUNCE_MS);
+      debounceId = setTimeout(renderRasters, MOVE_DEBOUNCE_MS);
     }
 
     map.on("moveend", scheduleRender);
     // Instant-hide during zoom-out: as soon as the camera crosses below the
-    // hyperlocal threshold, drop the raster. Show/refetch still waits for the
-    // debounced moveend so we don't hammer the API while the user is zooming.
+    // hyperlocal threshold, drop both rasters. Show/refetch still waits for
+    // the debounced moveend so we don't hammer the API while the user zooms.
     map.on("zoom", () => {
-      if (map.getZoom() < HEAT_MIN_ZOOM && map.getLayer(HEAT_LAYER_ID)) {
-        unmountRaster();
+      if (map.getZoom() < HEAT_MIN_ZOOM) {
+        if (map.getLayer(HEAT_LAYER_ID) || map.getLayer(CANOPY_LAYER_ID)) {
+          unmountAll();
+        }
       }
     });
-    // No initial fetch on load — wait for a place to be selected.
 
     mapRef.current = map;
 
@@ -281,13 +342,13 @@ export default function MapView() {
       if (debounceId) clearTimeout(debounceId);
       markerRef.current?.remove();
       markerRef.current = null;
-      renderHeatRef.current = () => {};
+      renderRastersRef.current = () => {};
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
-  // Place change → marker + flyTo. Cleared → strip marker + heat raster.
+  // Place change → marker + flyTo. Cleared → strip marker + both rasters.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -297,6 +358,8 @@ export default function MapView() {
       markerRef.current = null;
       if (map.getLayer(HEAT_LAYER_ID)) map.removeLayer(HEAT_LAYER_ID);
       if (map.getSource(HEAT_SOURCE_ID)) map.removeSource(HEAT_SOURCE_ID);
+      if (map.getLayer(CANOPY_LAYER_ID)) map.removeLayer(CANOPY_LAYER_ID);
+      if (map.getSource(CANOPY_SOURCE_ID)) map.removeSource(CANOPY_SOURCE_ID);
       return;
     }
 
@@ -310,13 +373,11 @@ export default function MapView() {
         .setLngLat(center)
         .addTo(map);
     }
-    // flyTo will fire moveend → debounced renderHeat will fetch + paint the field.
+    // flyTo will fire moveend → debounced renderRasters → fetch + paint both layers.
   }, [place]);
 
   useEffect(() => {
-    // Re-render when the active hazard switches (unmounts the heat raster
-    // when hazard !== "heat", will re-fetch + repaint when it flips back).
-    renderHeatRef.current();
+    renderRastersRef.current();
   }, [activeHazard]);
 
   return <div ref={containerRef} className="h-full w-full" />;
