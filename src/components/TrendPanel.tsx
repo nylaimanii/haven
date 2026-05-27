@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { BarChart3, X } from "lucide-react";
 import dynamic from "next/dynamic";
+import { createPortal } from "react-dom";
 
 import { useHavenStore } from "@/store/useHavenStore";
 
@@ -15,6 +16,13 @@ export default function TrendPanel() {
   const heatTrend = useHavenStore((s) => s.heatTrend);
   const activeHazard = useHavenStore((s) => s.activeHazard);
   const [open, setOpen] = useState(false);
+
+  // Portal target — `document` doesn't exist during SSR, so flip a mounted
+  // flag after first client paint and only call createPortal afterwards.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // ESC closes the drawer when open.
   useEffect(() => {
@@ -34,17 +42,8 @@ export default function TrendPanel() {
 
   if (!heatTrend || activeHazard !== "heat") return null;
 
-  return (
+  const drawer = (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="pointer-events-auto inline-flex items-center gap-1.5 self-start rounded-lg border border-haven-hairline bg-haven-surface/80 px-3 py-2 text-xs text-muted-foreground shadow-xl backdrop-blur-md transition-colors hover:text-foreground"
-      >
-        <BarChart3 className="size-3.5" aria-hidden />
-        See trend
-      </button>
-
       <div
         aria-hidden={!open}
         onClick={() => setOpen(false)}
@@ -77,6 +76,27 @@ export default function TrendPanel() {
           {open && <TrendChart trend={heatTrend} />}
         </div>
       </aside>
+    </>
+  );
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="pointer-events-auto inline-flex items-center gap-1.5 self-start rounded-lg border border-haven-hairline bg-haven-surface/80 px-3 py-2 text-xs text-muted-foreground shadow-xl backdrop-blur-md transition-colors hover:text-foreground"
+      >
+        <BarChart3 className="size-3.5" aria-hidden />
+        See trend
+      </button>
+      {/*
+        The drawer must escape the bottom-left card column's z-10 stacking
+        context, otherwise its z-40 is capped within that local scope and the
+        z-20 ProfileButton in <main> ends up rendering on top of the close
+        button. Portaling to body promotes it to the document root stacking
+        context so its z-index actually takes effect.
+      */}
+      {mounted && createPortal(drawer, document.body)}
     </>
   );
 }

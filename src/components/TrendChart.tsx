@@ -54,7 +54,19 @@ export default function TrendChart({ trend }: { trend: HeatTrendResult }) {
       </p>
 
       <div className="mt-5 h-72 w-full">
-        <ResponsiveContainer width="100%" height="100%">
+        {/*
+          minWidth/minHeight give recharts a non-zero floor on its very first
+          measurement pass — before the ResizeObserver fires with the real
+          container dimensions. Without these, recharts logs "width(-1)/
+          height(-1)" warnings when the chart mounts inside a panel that has
+          just animated in.
+        */}
+        <ResponsiveContainer
+          width="100%"
+          height="100%"
+          minWidth={320}
+          minHeight={240}
+        >
           <ComposedChart
             data={data}
             margin={{ top: 8, right: 8, bottom: 4, left: -16 }}
