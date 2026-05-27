@@ -18,6 +18,9 @@ const HEAT_RASTER_SIZE = 256;
 // Overscan: fetch + position the raster 15% beyond the viewport on each side so a
 // single move doesn't reveal a hard rectangle edge before the next debounced refresh.
 const HEAT_BBOX_PAD = 0.15;
+// HAVEN heat is hyperlocal — wider than metro scale (zoom < 8) we hide the layer
+// instead of letting it shrink to a small patch in a sea of bare basemap.
+const HEAT_MIN_ZOOM = 8;
 
 const HEAT_SOURCE_ID = "haven-heat-raster";
 const HEAT_LAYER_ID = "haven-heat-raster-layer";
@@ -214,7 +217,7 @@ export default function MapView() {
     async function renderHeat() {
       const placeNow = useHavenStore.getState().place;
       const hazard = useHavenStore.getState().activeHazard;
-      if (!placeNow || hazard !== "heat") {
+      if (!placeNow || hazard !== "heat" || map.getZoom() < HEAT_MIN_ZOOM) {
         unmountRaster();
         return;
       }
@@ -262,6 +265,14 @@ export default function MapView() {
     }
 
     map.on("moveend", scheduleRender);
+    // Instant-hide during zoom-out: as soon as the camera crosses below the
+    // hyperlocal threshold, drop the raster. Show/refetch still waits for the
+    // debounced moveend so we don't hammer the API while the user is zooming.
+    map.on("zoom", () => {
+      if (map.getZoom() < HEAT_MIN_ZOOM && map.getLayer(HEAT_LAYER_ID)) {
+        unmountRaster();
+      }
+    });
     // No initial fetch on load — wait for a place to be selected.
 
     mapRef.current = map;
