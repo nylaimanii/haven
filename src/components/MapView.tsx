@@ -29,6 +29,9 @@ const HEAT_OPACITY = 0.5;
 const CANOPY_SOURCE_ID = "haven-canopy-raster";
 const CANOPY_LAYER_ID = "haven-canopy-raster-layer";
 const CANOPY_OPACITY = 0.4;
+const FLOOD_SOURCE_ID = "haven-flood-raster";
+const FLOOD_LAYER_ID = "haven-flood-raster-layer";
+const FLOOD_OPACITY = 0.55;
 
 const HUB_COLOR = "#3FC179"; // --haven-safe
 const HUB_MAX_SHOWN = 5;
@@ -61,6 +64,7 @@ function buildHubMarkerEl(openNow: boolean | null): HTMLElement {
 
 type HeatPoint = { lat: number; lng: number; temp: number };
 type CanopyPoint = { lat: number; lng: number; canopy: number };
+type FloodPoint = { lat: number; lng: number; elevation: number };
 type BBox = { west: number; south: number; east: number; north: number };
 
 // Color ramps include alpha so each layer controls its own pixel opacity. Heat
@@ -81,6 +85,16 @@ const CANOPY_RAMP: Ramp = [
   [0.4, [80, 160, 100, 110]],
   [0.7, [63, 193, 121, 180]],
   [1.0, [63, 193, 121, 230]],
+];
+
+// Lowest elevation in the viewport reads as deep --haven-flood blue; high
+// ground fades to transparent. Inverted on purpose: low ground = at-risk.
+const FLOOD_RAMP: Ramp = [
+  [0.0, [58, 138, 209, 235]],
+  [0.25, [80, 150, 215, 200]],
+  [0.55, [120, 175, 225, 130]],
+  [0.85, [150, 195, 235, 60]],
+  [1.0, [255, 255, 255, 0]],
 ];
 
 function rampColor(t: number, ramp: Ramp): [number, number, number, number] {
@@ -220,6 +234,7 @@ export default function MapView() {
     function unmountAll() {
       unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
       unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
+      unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
     }
 
     function mountRasterLayer(
@@ -270,14 +285,7 @@ export default function MapView() {
       );
     }
 
-    async function renderRasters() {
-      const placeNow = useHavenStore.getState().place;
-      const hazard = useHavenStore.getState().activeHazard;
-      if (!placeNow || hazard !== "heat" || map.getZoom() < HEAT_MIN_ZOOM) {
-        unmountAll();
-        return;
-      }
-
+    function paddedBBox(): BBox {
       const b = map.getBounds();
       const w = b.getWest();
       const e = b.getEast();
@@ -285,30 +293,29 @@ export default function MapView() {
       const n = b.getNorth();
       const padLng = (e - w) * HEAT_BBOX_PAD;
       const padLat = (n - s) * HEAT_BBOX_PAD;
-      const bbox: BBox = {
+      return {
         west: w - padLng,
         east: e + padLng,
         south: s - padLat,
         north: n + padLat,
       };
-      const params = new URLSearchParams({
+    }
+
+    function bboxQS(bbox: BBox): string {
+      return new URLSearchParams({
         west: String(bbox.west),
         south: String(bbox.south),
         east: String(bbox.east),
         north: String(bbox.north),
-      });
-      const qs = params.toString();
+      }).toString();
+    }
 
-      // Parallel fetch; allSettled so canopy failure doesn't kill heat or vice versa.
+    async function renderHeat(bbox: BBox, qs: string) {
+      // Heat + canopy in parallel; allSettled so one failure doesn't kill the other.
       const [heatSettled, canopySettled] = await Promise.allSettled([
         fetch(`/api/heat?${qs}`),
         fetch(`/api/canopy?${qs}`),
       ]);
-
-      // Re-check gates AFTER the fetch — the user may have cleared the place,
-      // switched hazards, or zoomed below threshold while we were waiting.
-      // Without this, a slow fetch can race a fast zoom-out and mount a
-      // stale-bbox raster at low zoom (the patch the QA flagged).
       if (
         !useHavenStore.getState().place ||
         useHavenStore.getState().activeHazard !== "heat" ||
@@ -317,7 +324,6 @@ export default function MapView() {
         unmountAll();
         return;
       }
-
       // Mount heat first so canopy stacks above it (both still below labels).
       if (heatSettled.status === "fulfilled" && heatSettled.value.ok) {
         try {
@@ -329,9 +335,7 @@ export default function MapView() {
           if (url) {
             mountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID, url, bbox, HEAT_OPACITY);
           }
-        } catch {
-          // ignore JSON failure
-        }
+        } catch {}
       }
       if (canopySettled.status === "fulfilled" && canopySettled.value.ok) {
         try {
@@ -351,9 +355,63 @@ export default function MapView() {
               CANOPY_OPACITY,
             );
           }
-        } catch {
-          // ignore JSON failure
+        } catch {}
+      }
+    }
+
+    async function renderFlood(bbox: BBox, qs: string) {
+      try {
+        const r = await fetch(`/api/flood?${qs}`);
+        if (!r.ok) return;
+        const data = (await r.json()) as { points: FloodPoint[] };
+        if (
+          !useHavenStore.getState().place ||
+          useHavenStore.getState().activeHazard !== "flood" ||
+          map.getZoom() < HEAT_MIN_ZOOM
+        ) {
+          unmountAll();
+          return;
         }
+        const url = buildRasterURL(
+          (data.points ?? []).map((p) => p.elevation),
+          FLOOD_RAMP,
+        );
+        if (url) {
+          mountRasterLayer(
+            FLOOD_SOURCE_ID,
+            FLOOD_LAYER_ID,
+            url,
+            bbox,
+            FLOOD_OPACITY,
+          );
+        }
+      } catch {
+        // ignore — degrade to "no raster" cleanly
+      }
+    }
+
+    async function renderRasters() {
+      const placeNow = useHavenStore.getState().place;
+      const hazard = useHavenStore.getState().activeHazard;
+      if (!placeNow || map.getZoom() < HEAT_MIN_ZOOM) {
+        unmountAll();
+        return;
+      }
+
+      const bbox = paddedBBox();
+      const qs = bboxQS(bbox);
+
+      if (hazard === "heat") {
+        // Switching INTO heat → ensure flood from a prior render is gone.
+        unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
+        await renderHeat(bbox, qs);
+      } else if (hazard === "flood") {
+        unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
+        unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
+        await renderFlood(bbox, qs);
+      } else {
+        // air (no data layer yet) or any other hazard → clean map.
+        unmountAll();
       }
     }
     renderRastersRef.current = renderRasters;
@@ -394,10 +452,10 @@ export default function MapView() {
     if (!place) {
       markerRef.current?.remove();
       markerRef.current = null;
-      if (map.getLayer(HEAT_LAYER_ID)) map.removeLayer(HEAT_LAYER_ID);
-      if (map.getSource(HEAT_SOURCE_ID)) map.removeSource(HEAT_SOURCE_ID);
-      if (map.getLayer(CANOPY_LAYER_ID)) map.removeLayer(CANOPY_LAYER_ID);
-      if (map.getSource(CANOPY_SOURCE_ID)) map.removeSource(CANOPY_SOURCE_ID);
+      // renderRasters sees place=null and tears down whatever raster is
+      // currently mounted (heat+canopy or flood). Cleaner than maintaining
+      // a parallel list of source/layer ids here.
+      renderRastersRef.current();
       return;
     }
 
