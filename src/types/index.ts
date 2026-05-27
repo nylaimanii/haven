@@ -43,6 +43,37 @@ export type HeatTrendResult = {
   summary: string; // plain-language, deterministically built from the numbers
 };
 
+export type AdvisorContext = {
+  place: { label: string };
+  conditions: {
+    tempF: number;
+    feelsLikeF: number | null;
+    alerts: ConditionAlert[];
+    source: "nws" | "open-meteo";
+  };
+  score: {
+    score: number;
+    band: RiskBand;
+    factors: ScoreFactor[];
+    feelsLikeF: number;
+  };
+  trend: {
+    perDecade: number;
+    earlyAvg: number;
+    recentAvg: number;
+    direction: HeatTrendResult["direction"];
+    summary: string;
+  } | null;
+  profile: Profile;
+};
+
+export type AdvisorResult = {
+  headline: string;
+  why: string;
+  actions: string[];
+  trendNote: string;
+};
+
 export type ScoreFactor = { label: string; points: number };
 
 export type HeatScoreResult = {

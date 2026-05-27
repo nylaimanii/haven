@@ -12,6 +12,7 @@ import { create } from "zustand";
 import { computeHeatScore } from "@/lib/heatScore";
 import { computeHeatTrend } from "@/lib/heatTrend";
 import type {
+  AdvisorResult,
   Conditions,
   Hazard,
   HeatScoreResult,
@@ -45,6 +46,7 @@ type HavenState = {
   heatScore: HeatScoreResult | null;
   history: HistoryPoint[] | null;
   heatTrend: HeatTrendResult | null;
+  advisor: AdvisorResult | null;
 
   setPlace: (place: Place) => void;
   clearPlace: () => void;
@@ -53,6 +55,7 @@ type HavenState = {
   resetProfile: () => void;
   setConditions: (conditions: Conditions | null) => void;
   setHistory: (history: HistoryPoint[] | null) => void;
+  setAdvisor: (advisor: AdvisorResult | null) => void;
 };
 
 export const useHavenStore = create<HavenState>()((set) => ({
@@ -63,6 +66,7 @@ export const useHavenStore = create<HavenState>()((set) => ({
   heatScore: null,
   history: null,
   heatTrend: null,
+  advisor: null,
 
   setPlace: (place) => set({ place }),
   clearPlace: () =>
@@ -72,6 +76,7 @@ export const useHavenStore = create<HavenState>()((set) => ({
       heatScore: null,
       history: null,
       heatTrend: null,
+      advisor: null,
     }),
 
   updateProfile: (partial) =>
@@ -106,4 +111,6 @@ export const useHavenStore = create<HavenState>()((set) => ({
       history,
       heatTrend: history ? computeHeatTrend(history) : null,
     }),
+
+  setAdvisor: (advisor) => set({ advisor }),
 }));

@@ -1,3 +1,4 @@
+import AdvisorLoader from "@/components/AdvisorLoader";
 import ConditionsLoader from "@/components/ConditionsLoader";
 import HazardHint from "@/components/HazardHint";
 import HazardToggle from "@/components/HazardToggle";
@@ -20,6 +21,7 @@ export default function Home() {
       <ProfileButton />
       <ConditionsLoader />
       <HistoryLoader />
+      <AdvisorLoader />
     </main>
   );
 }
