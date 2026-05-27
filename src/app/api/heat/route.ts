@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 // TODO: swap to real land-surface-temperature (e.g. NASA MODIS / Landsat LST) later.
 
 const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
-const GRID_N = 9; // 9x9 = 81 points, single batched request, comfortably under limits
+const GRID_N = 16; // 16x16 = 256 points: more source detail for the client-side bilinear interpolation
 const DEFAULT_RADIUS_DEG = 0.075; // ~0.15° box (~16km) for center-based queries
 
 export type HeatPoint = { lat: number; lng: number; temp: number };
