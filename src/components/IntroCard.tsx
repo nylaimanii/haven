@@ -37,7 +37,9 @@ export default function IntroCard() {
   // Compact pill once a place is selected — the map experience takes over.
   if (place) {
     return (
-      <div className="pointer-events-none fixed inset-x-0 top-4 z-10 flex justify-center px-4">
+      // Asymmetric padding on mobile (pr-20) keeps the centered pill clear of
+      // the top-right ProfileButton (z-20). Resets to symmetric px-4 at sm+.
+      <div className="pointer-events-none fixed inset-x-0 top-4 z-10 flex justify-center pl-4 pr-20 sm:px-4">
         <div className="pointer-events-auto flex max-w-md items-center gap-3 rounded-full border border-haven-hairline bg-haven-surface/80 px-4 py-2 text-sm shadow-xl backdrop-blur-md">
           <span className="font-medium tracking-tight">HAVEN</span>
           <span className="truncate text-muted-foreground" title={place.label}>

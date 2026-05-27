@@ -42,7 +42,10 @@ export default function HazardToggle() {
   if (!place) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-20 z-10 flex justify-center px-4">
+    // Asymmetric padding on mobile keeps the centered toggle clear of the
+    // top-right ProfileButton at narrow widths (a 360px viewport otherwise
+    // sees a ~1px touch between the right-most pill button and the avatar).
+    <div className="pointer-events-none fixed inset-x-0 top-20 z-10 flex justify-center pl-4 pr-20 sm:px-4">
       <div
         role="group"
         aria-label="hazard layer"
