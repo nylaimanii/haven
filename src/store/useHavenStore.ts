@@ -1,14 +1,22 @@
 /**
  * useHavenStore — single source of truth for the HAVEN app.
  *
- * Holds the user's selected place, their vulnerability profile, and the
- * currently focused hazard. Every HAVEN view (map overlay, score panel,
- * AI advisor, trend chart) reads from this store.
+ * Holds the user's selected place, vulnerability profile, currently focused
+ * hazard, the live point conditions, and the derived heat risk score.
+ * Every HAVEN view (map overlay, score panel, AI advisor, trend chart)
+ * reads from this store.
  */
 
 import { create } from "zustand";
 
-import type { Conditions, Hazard, Place, Profile } from "@/types";
+import { computeHeatScore } from "@/lib/heatScore";
+import type {
+  Conditions,
+  Hazard,
+  HeatScoreResult,
+  Place,
+  Profile,
+} from "@/types";
 
 const defaultProfile: Profile = {
   ageBand: "18to64",
@@ -17,11 +25,21 @@ const defaultProfile: Profile = {
   outdoorWorker: false,
 };
 
+function deriveScore(
+  conditions: Conditions | null,
+  profile: Profile,
+  activeHazard: Hazard,
+): HeatScoreResult | null {
+  if (!conditions || activeHazard !== "heat") return null;
+  return computeHeatScore(conditions, profile);
+}
+
 type HavenState = {
   place: Place | null;
   profile: Profile;
   activeHazard: Hazard;
   conditions: Conditions | null;
+  heatScore: HeatScoreResult | null;
 
   setPlace: (place: Place) => void;
   clearPlace: () => void;
@@ -36,12 +54,36 @@ export const useHavenStore = create<HavenState>()((set) => ({
   profile: defaultProfile,
   activeHazard: "heat",
   conditions: null,
+  heatScore: null,
 
   setPlace: (place) => set({ place }),
-  clearPlace: () => set({ place: null, conditions: null }),
+  clearPlace: () =>
+    set({ place: null, conditions: null, heatScore: null }),
+
   updateProfile: (partial) =>
-    set((state) => ({ profile: { ...state.profile, ...partial } })),
-  setActiveHazard: (hazard) => set({ activeHazard: hazard }),
-  resetProfile: () => set({ profile: defaultProfile }),
-  setConditions: (conditions) => set({ conditions }),
+    set((state) => {
+      const profile = { ...state.profile, ...partial };
+      return {
+        profile,
+        heatScore: deriveScore(state.conditions, profile, state.activeHazard),
+      };
+    }),
+
+  setActiveHazard: (hazard) =>
+    set((state) => ({
+      activeHazard: hazard,
+      heatScore: deriveScore(state.conditions, state.profile, hazard),
+    })),
+
+  resetProfile: () =>
+    set((state) => ({
+      profile: defaultProfile,
+      heatScore: deriveScore(state.conditions, defaultProfile, state.activeHazard),
+    })),
+
+  setConditions: (conditions) =>
+    set((state) => ({
+      conditions,
+      heatScore: deriveScore(conditions, state.profile, state.activeHazard),
+    })),
 }));

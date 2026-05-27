@@ -27,3 +27,13 @@ export type Conditions = {
   source: "nws" | "open-meteo";
   observedAt: string; // ISO timestamp from the upstream
 };
+
+export type ScoreFactor = { label: string; points: number };
+
+export type HeatScoreResult = {
+  score: number; // 0-100, integer
+  band: RiskBand;
+  environmentalBase: number; // temp-derived contribution (pre-alert bumps)
+  factors: ScoreFactor[]; // explainable breakdown, in display order
+  feelsLikeF: number; // the feels-like the score was computed against
+};
