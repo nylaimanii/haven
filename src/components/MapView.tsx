@@ -21,10 +21,13 @@ const HEAT_RASTER_SIZE = 256;
 // reveal a hard bounding box. Combined with the radial alpha mask in
 // buildRasterURL the visible field has no perceptible edge at all.
 const HEAT_BBOX_PAD = 0.5;
-// HAVEN heat/canopy are hyperlocal — wider than dense-metro scale (zoom < 10)
-// we hide. Set above the zoom where a single moveend's stale-coord transient
-// would otherwise read as a small patch in a much larger viewport.
-const HEAT_MIN_ZOOM = 10;
+// Below this zoom the 16×16 grid is too coarse to be meaningfully hyperlocal,
+// so we unmount and let the user zoom back in. Lowered from 10 → 6 because the
+// radial alpha mask + 2× padded bbox now make the raster look correct at any
+// in-range zoom — the clamp's old job (hide hard rectangle at wide zoom) is
+// done by the mask, and the clamp was killing renders at fresh-search landing
+// zooms that vary city-to-city.
+const HEAT_MIN_ZOOM = 6;
 
 const HEAT_SOURCE_ID = "haven-heat-raster";
 const HEAT_LAYER_ID = "haven-heat-raster-layer";
@@ -79,6 +82,33 @@ type CanopyPoint = { lat: number; lng: number; canopy: number };
 type FloodPoint = { lat: number; lng: number; elevation: number };
 type AirPoint = { lat: number; lng: number; aqi: number };
 type BBox = { west: number; south: number; east: number; north: number };
+
+// Predict the post-flyTo bbox from destination coords + target zoom + the map
+// container's pixel dims, using Web Mercator math. Lets us start the data
+// fetch IN PARALLEL with flyTo instead of waiting for the map to settle —
+// the raster mounts the moment fetch + idle both complete, not in series.
+// At zoom z, one tile (256px) covers 360/2^z° of longitude at the equator;
+// latitude compresses by cos(φ).
+function bboxAtZoom(
+  lat: number,
+  lng: number,
+  zoom: number,
+  widthPx: number,
+  heightPx: number,
+): BBox {
+  const degPerPx = 360 / (256 * Math.pow(2, zoom));
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  const halfLng = (widthPx * degPerPx) / 2;
+  const halfLat = (heightPx * degPerPx * cosLat) / 2;
+  const padLng = halfLng * 2 * HEAT_BBOX_PAD;
+  const padLat = halfLat * 2 * HEAT_BBOX_PAD;
+  return {
+    west: lng - halfLng - padLng,
+    east: lng + halfLng + padLng,
+    south: lat - halfLat - padLat,
+    north: lat + halfLat + padLat,
+  };
+}
 
 // Color ramps include alpha so each layer controls its own pixel opacity. Heat
 // is fully opaque across the range; canopy fades from transparent (sparse) to a
@@ -247,7 +277,10 @@ export default function MapView() {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerRef = useRef<maplibregl.Marker | null>(null);
-  const renderRastersRef = useRef<() => void>(() => {});
+  const renderRastersRef = useRef<(predictedBBox?: BBox) => void>(() => {});
+  // Aborts the previous raster fetch when the user picks a new place / hazard
+  // / pans so a stale response can never paint over a newer one.
+  const fetchAbortRef = useRef<AbortController | null>(null);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -373,24 +406,28 @@ export default function MapView() {
       }).toString();
     }
 
-    async function renderHeat(bbox: BBox, qs: string) {
-      // Heat + canopy in parallel; allSettled so one failure doesn't kill the other.
-      const [heatSettled, canopySettled] = await Promise.allSettled([
-        fetch(`/api/heat?${qs}`),
-        fetch(`/api/canopy?${qs}`),
+    async function renderHeat(
+      bbox: BBox,
+      qs: string,
+      signal: AbortSignal,
+      idlePromise: Promise<void>,
+    ) {
+      // Fire fetches + wait for map idle in parallel — whichever takes longer
+      // gates the mount. allSettled so one failure doesn't kill the other.
+      const fetchP = Promise.allSettled([
+        fetch(`/api/heat?${qs}`, { signal }),
+        fetch(`/api/canopy?${qs}`, { signal }),
       ]);
-      if (
-        !useHavenStore.getState().place ||
-        useHavenStore.getState().activeHazard !== "heat" ||
-        map.getZoom() < HEAT_MIN_ZOOM
-      ) {
-        unmountAll();
-        return;
-      }
+      const [[heatSettled, canopySettled]] = await Promise.all([
+        fetchP,
+        idlePromise,
+      ]);
+      if (signal.aborted) return;
       // Mount heat first so canopy stacks above it (both still below labels).
       if (heatSettled.status === "fulfilled" && heatSettled.value.ok) {
         try {
           const data = (await heatSettled.value.json()) as { points: HeatPoint[] };
+          if (signal.aborted) return;
           const url = buildRasterURL(
             (data.points ?? []).map((p) => p.temp),
             HEAT_RAMP,
@@ -405,6 +442,7 @@ export default function MapView() {
           const data = (await canopySettled.value.json()) as {
             points: CanopyPoint[];
           };
+          if (signal.aborted) return;
           const url = buildRasterURL(
             (data.points ?? []).map((p) => p.canopy),
             CANOPY_RAMP,
@@ -422,19 +460,20 @@ export default function MapView() {
       }
     }
 
-    async function renderFlood(bbox: BBox, qs: string) {
+    async function renderFlood(
+      bbox: BBox,
+      qs: string,
+      signal: AbortSignal,
+      idlePromise: Promise<void>,
+    ) {
       try {
-        const r = await fetch(`/api/flood?${qs}`);
-        if (!r.ok) return;
+        const [r] = await Promise.all([
+          fetch(`/api/flood?${qs}`, { signal }),
+          idlePromise,
+        ]);
+        if (signal.aborted || !r.ok) return;
         const data = (await r.json()) as { points: FloodPoint[] };
-        if (
-          !useHavenStore.getState().place ||
-          useHavenStore.getState().activeHazard !== "flood" ||
-          map.getZoom() < HEAT_MIN_ZOOM
-        ) {
-          unmountAll();
-          return;
-        }
+        if (signal.aborted) return;
         const url = buildRasterURL(
           (data.points ?? []).map((p) => p.elevation),
           FLOOD_RAMP,
@@ -449,23 +488,24 @@ export default function MapView() {
           );
         }
       } catch {
-        // ignore — degrade to "no raster" cleanly
+        // AbortError or network — degrade to "no raster" cleanly
       }
     }
 
-    async function renderAir(bbox: BBox, qs: string) {
+    async function renderAir(
+      bbox: BBox,
+      qs: string,
+      signal: AbortSignal,
+      idlePromise: Promise<void>,
+    ) {
       try {
-        const r = await fetch(`/api/air?${qs}`);
-        if (!r.ok) return;
+        const [r] = await Promise.all([
+          fetch(`/api/air?${qs}`, { signal }),
+          idlePromise,
+        ]);
+        if (signal.aborted || !r.ok) return;
         const data = (await r.json()) as { points: AirPoint[] };
-        if (
-          !useHavenStore.getState().place ||
-          useHavenStore.getState().activeHazard !== "air" ||
-          map.getZoom() < HEAT_MIN_ZOOM
-        ) {
-          unmountAll();
-          return;
-        }
+        if (signal.aborted) return;
         const url = buildRasterURL(
           (data.points ?? []).map((p) => p.aqi),
           AIR_RAMP,
@@ -481,35 +521,61 @@ export default function MapView() {
           );
         }
       } catch {
-        // ignore — degrade to "no raster" cleanly
+        // AbortError or network — degrade to "no raster" cleanly
       }
     }
 
-    async function renderRasters() {
+    async function renderRasters(predictedBBox?: BBox) {
+      // Cancel any in-flight fetch so a stale response from the previous
+      // place/hazard/pan can never paint over the newer one.
+      fetchAbortRef.current?.abort();
+      const controller = new AbortController();
+      fetchAbortRef.current = controller;
+      const signal = controller.signal;
+
       const placeNow = useHavenStore.getState().place;
       const hazard = useHavenStore.getState().activeHazard;
-      if (!placeNow || map.getZoom() < HEAT_MIN_ZOOM) {
+      if (!placeNow) {
         unmountAll();
         return;
       }
 
-      const bbox = paddedBBox();
+      let bbox: BBox;
+      let idlePromise: Promise<void>;
+      if (predictedBBox) {
+        // Place-select fast path: fetch fires in parallel with flyTo using the
+        // predicted post-fly bbox. Mount waits for idle (basemap settled) AND
+        // fetch — whichever's later.
+        bbox = predictedBBox;
+        idlePromise = new Promise<void>((resolve) => {
+          map.once("idle", () => resolve());
+        });
+      } else {
+        // Moveend path: movement has already ended, so idle is effectively now.
+        if (map.getZoom() < HEAT_MIN_ZOOM) {
+          unmountAll();
+          return;
+        }
+        bbox = paddedBBox();
+        idlePromise = Promise.resolve();
+      }
+
       const qs = bboxQS(bbox);
 
       if (hazard === "heat") {
         unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
         unmountRasterLayer(AIR_SOURCE_ID, AIR_LAYER_ID);
-        await renderHeat(bbox, qs);
+        await renderHeat(bbox, qs, signal, idlePromise);
       } else if (hazard === "flood") {
         unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
         unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
         unmountRasterLayer(AIR_SOURCE_ID, AIR_LAYER_ID);
-        await renderFlood(bbox, qs);
+        await renderFlood(bbox, qs, signal, idlePromise);
       } else if (hazard === "air") {
         unmountRasterLayer(HEAT_SOURCE_ID, HEAT_LAYER_ID);
         unmountRasterLayer(CANOPY_SOURCE_ID, CANOPY_LAYER_ID);
         unmountRasterLayer(FLOOD_SOURCE_ID, FLOOD_LAYER_ID);
-        await renderAir(bbox, qs);
+        await renderAir(bbox, qs, signal, idlePromise);
       } else {
         unmountAll();
       }
@@ -518,28 +584,20 @@ export default function MapView() {
 
     function scheduleRender() {
       if (debounceRef.current) clearTimeout(debounceRef.current);
-      debounceRef.current = setTimeout(renderRasters, MOVE_DEBOUNCE_MS);
+      debounceRef.current = setTimeout(() => renderRasters(), MOVE_DEBOUNCE_MS);
     }
 
     map.on("moveend", scheduleRender);
-    // Only unmount during zoom-OUT, not zoom-in. The previous "zoomstart on any
-    // zoom" was too aggressive: a flyTo from initial zoom 10 → 12 (a search
-    // into the app) fired zoomstart and wiped any in-flight or freshly-mounted
-    // raster, which is exactly the "Newark works but Philadelphia doesn't"
-    // symptom the QA flagged. Zoom-in leaves the geo-anchored raster covering
-    // the new (smaller) viewport just fine, so no unmount is needed there.
+    // Only unmount when crossing BELOW HEAT_MIN_ZOOM — within range the raster
+    // is geo-anchored and renders correctly at any zoom thanks to the alpha
+    // mask + 2× padded bbox. moveend's debounced refresh handles same-range
+    // zoom changes via setCoordinates+updateImage on the existing source.
     let lastZoom = map.getZoom();
     map.on("zoom", () => {
       const z = map.getZoom();
-      if (z < lastZoom) {
-        if (
-          map.getLayer(HEAT_LAYER_ID) ||
-          map.getLayer(CANOPY_LAYER_ID) ||
-          map.getLayer(FLOOD_LAYER_ID) ||
-          map.getLayer(AIR_LAYER_ID)
-        ) {
-          unmountAll();
-        }
+      if (z < HEAT_MIN_ZOOM && lastZoom >= HEAT_MIN_ZOOM) {
+        fetchAbortRef.current?.abort();
+        unmountAll();
       }
       lastZoom = z;
     });
@@ -548,6 +606,8 @@ export default function MapView() {
 
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      fetchAbortRef.current?.abort();
+      fetchAbortRef.current = null;
       markerRef.current?.remove();
       markerRef.current = null;
       renderRastersRef.current = () => {};
@@ -572,6 +632,22 @@ export default function MapView() {
     }
 
     const center: [number, number] = [place.lng, place.lat];
+
+    // Predict the post-flyTo bbox from the destination coords + target zoom +
+    // the container's pixel dims. This lets the fetch start IN PARALLEL with
+    // flyTo (instead of waiting for idle and racing basemap tile loads, which
+    // made the raster disappear for some cities). Fallback dims cover the
+    // first render before layout settles.
+    const cw = containerRef.current?.clientWidth ?? 1280;
+    const ch = containerRef.current?.clientHeight ?? 720;
+    const predictedBBox = bboxAtZoom(
+      place.lat,
+      place.lng,
+      SELECTED_ZOOM,
+      cw,
+      ch,
+    );
+
     map.flyTo({ center, zoom: SELECTED_ZOOM, essential: true });
 
     if (markerRef.current) {
@@ -582,25 +658,16 @@ export default function MapView() {
         .addTo(map);
     }
 
-    // Fire renderRasters once the map is FULLY SETTLED after flyTo. "idle"
-    // fires after moveend AND after all queued tile loads finish — it's the
-    // canonical MapLibre "nothing pending, geometry is stable" signal.
-    // moveend alone fired before the basemap finished resolving for a
-    // far-away city, so getBounds() occasionally returned a still-animating
-    // viewport and the raster mounted with a slightly-too-small bbox.
-    // Cancels any pending debounced render so we don't double-fetch.
-    const onIdle = () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-        debounceRef.current = null;
-      }
-      renderRastersRef.current();
-    };
-    map.once("idle", onIdle);
-
-    return () => {
-      map.off("idle", onIdle);
-    };
+    // Kick off the fetch immediately. renderRasters internally awaits both the
+    // fetch and the next "idle" event before mounting — so the raster appears
+    // the moment both complete, in parallel rather than in series. Cancels any
+    // pending debounced moveend render so we don't double-fetch when moveend
+    // fires at the end of the fly.
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    renderRastersRef.current(predictedBBox);
   }, [place]);
 
   useEffect(() => {
